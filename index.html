@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Gap to P1 by Lap — ECharts (auto plot)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root { --bg:#0f1115; --fg:#e8e8e8; --muted:#8b8b8b; --panel:#1a1d24; }
+    body { margin:0; font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:var(--fg); background:var(--bg); }
+    header { padding:10px 14px; background:var(--panel); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    header .title { font-weight:600; margin-right:auto; }
+    header input[type="file"] { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; }
+    .layout { display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px); }
+    #sidebar { background:var(--panel); border-right:1px solid #232833; display:flex; flex-direction:column; }
+    #sidebar .section { padding:12px; border-bottom:1px solid #232833; }
+    #driverList { padding:10px; overflow:auto; }
+    .driver { display:flex; align-items:center; gap:8px; padding:4px 2px; border-radius:6px; }
+    .driver:hover { background:#141820; }
+    .small { color:var(--muted); font-size:12px; }
+    #chart { width:100%; height:100%; }
+    .buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .buttons button { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; cursor:pointer; }
+    .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">ECharts — Step Lines with End Labels</div>
+    <!-- (1) Plot immediately on selection; (2) no dropdown; (3) no invert button -->
+    <input id="fileInput" type="file" accept=".csv" />
+    <span id="meta" class="small"></span>
+  </header>
+
+  <div class="layout">
+    <aside id="sidebar">
+      <div class="section">
+        <div class="buttons">
+          <button id="btnAll">Select all</button>
+          <button id="btnNone">Clear all</button>
+        </div>
+      </div>
+      <div id="driverList" aria-label="Driver list"></div>
+    </aside>
+    <main id="chart"></main>
+  </div>
+
+  <script>
+    // ----- Chart setup -----
+    const chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
+    window.addEventListener('resize', () => chart.resize());
+
+    // Hidden legend drives selection state
+    const hiddenLegend = { show: false, selected: {} };
+
+    // ----- DOM refs -----
+    const fileInput = document.getElementById('fileInput');
+    const meta      = document.getElementById('meta');
+    const driverList= document.getElementById('driverList');
+    const btnAll    = document.getElementById('btnAll');
+    const btnNone   = document.getElementById('btnNone');
+
+    // ----- State -----
+    let currentSeriesNames = [];
+    let lastYFallback = { min: -100, max: 1 }; // used if everything is hidden
+
+    // ----- CSV parsing -----
+    function parseDriverLines(csvText) {
+      const lines = csvText.split(/\r?\n/).filter(s => s.trim().length);
+      const rows = [];
+      let lapCount = 0;
+      let allY = [];
+      for (const line of lines) {
+        const cells = line.split(',').map(s => s.trim());
+        if (!cells.length) continue;
+        const label = cells[0] || '';
+        const nums = [];
+        for (let i = 1; i < cells.length; i++) {
+          const v = parseFloat(cells[i]);
+          if (Number.isFinite(v)) nums.push(v);
+        }
+        if (!label || nums.length === 0) continue;
+        lapCount = Math.max(lapCount, nums.length);
+        allY = allY.concat(nums);
+        rows.push({ label, values: nums });
+      }
+      const minY = allY.length ? Math.min.apply(null, allY) : -100;
+      const maxY = allY.length ? Math.max.apply(null, allY) : 1;
+      return { rows, lapCount, minY, maxY };
+    }
+
+    function buildOption(parsed, titleText) {
+      const { rows, lapCount, minY, maxY } = parsed;
+      const rightX = lapCount + 1.2;
+
+      const series = [];
+      hiddenLegend.selected = {};
+      for (const { label, values } of rows) {
+        const data = [];
+        for (let i = 0; i < values.length; i++) data.push([i + 1, values[i]]);
+        if (values.length) data.push([rightX, values[values.length - 1]]);
+        hiddenLegend.selected[label] = true;
+
+        series.push({
+          name: label,
+          type: 'line',
+          data,
+          step: 'end',
+          showSymbol: false,
+          lineStyle: { width: 1.8, opacity: 0.95 },
+          emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
+          blur: { lineStyle: { opacity: 0.75 } },
+          endLabel: { show: true, formatter: '{a}', position: 'right', offset: [6,0], color: 'inherit' },
+          progressive: 2000,
+          animation: false,
+          clip: true
+        });
+      }
+
+      // remember a sensible default range from the raw data
+      lastYFallback = {
+        min: Math.min(-100, Math.floor(minY - 2)),
+        max: Math.max(1, Math.ceil(maxY + 1))
+      };
+
+      return {
+        backgroundColor: 'transparent',
+        title: { text: titleText || 'Gap to P1 by Lap', left: 'center', top: 6, textStyle: { color: '#e8e8e8', fontSize: 16, fontWeight: 600 } },
+        grid: { left: 56, right: 130, top: 42, bottom: 40 },
+        tooltip: { show: false },
+        legend: hiddenLegend,
+        xAxis: {
+          type: 'value',
+          min: 1,
+          max: rightX + 0.1,
+          name: 'Lap',
+          nameLocation: 'middle',
+          nameGap: 28,
+          axisLabel: { color: '#c8c8c8', formatter: v => Number.isInteger(v) ? v : '' },
+          splitLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLine: { lineStyle: { color: '#6b6f7b' } },
+        },
+        yAxis: {
+          type: 'value',
+          min: lastYFallback.min,
+          max: lastYFallback.max,
+          name: 'Gap to P1 (s)',
+          nameLocation: 'middle',
+          nameGap: 40,
+          axisLabel: { color: '#c8c8c8' },
+          splitLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLine: { lineStyle: { color: '#6b6f7b' } },
+        },
+        series: [
+          ...series,
+          { // baseline y=0
+            name: '__baseline__',
+            type: 'line',
+            data: [[1, 0], [lapCount + 1.3, 0]],
+            showSymbol: false,
+            lineStyle: { width: 1, opacity: 0.35, color: '#aaaaaa' },
+            silent: true,
+            z: -1
+          }
+        ]
+      };
+    }
+
+    // ---- Auto y-axis scaling to visible series ----
+    function updateYAxisToVisible() {
+      const opt = chart.getOption();
+      const legendSel = (opt.legend && opt.legend[0] && opt.legend[0].selected) || {};
+      const series = (opt.series || []).filter(s =>
+        s.type === 'line' && s.name !== '__baseline__' && (legendSel[s.name] !== false)
+      );
+
+      let min = Infinity, max = -Infinity;
+      for (const s of series) {
+        for (const pt of s.data) {
+          const y = Array.isArray(pt) ? pt[1] : (pt && pt.value ? pt.value[1] : null);
+          if (Number.isFinite(y)) { if (y < min) min = y; if (y > max) max = y; }
+        }
+      }
+
+      if (!series.length || !Number.isFinite(min) || !Number.isFinite(max)) {
+        chart.setOption({ yAxis: { min: lastYFallback.min, max: lastYFallback.max } });
+        return;
+      }
+      const span = Math.max(1e-6, max - min);
+      const pad = Math.max(0.02 * span, 0.5);
+      const yMin = Math.min(min - pad, 0);
+      const yMax = Math.max(max + pad, 0.5);
+
+      chart.setOption({ yAxis: { min: Math.floor(yMin), max: Math.ceil(yMax) } });
+    }
+
+    chart.on('legendselectchanged', updateYAxisToVisible); // backup
+
+    // ----- Immediate plotting on file selection -----
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const parsed = parseDriverLines(reader.result);
+        const option = buildOption(parsed, file.name.replace(/\.[^.]+$/, ''));
+        chart.setOption(option, true);
+        currentSeriesNames = parsed.rows.map(r => r.label);
+        buildDriverList(currentSeriesNames);
+        meta.textContent = `File: ${file.name} • Laps: ${parsed.lapCount} • Lines: ${currentSeriesNames.length}`;
+        updateYAxisToVisible(); // initial fit
+      };
+      reader.readAsText(file);
+    });
+
+    // ----- Driver list + toggling -----
+    function buildDriverList(names) {
+      driverList.innerHTML = '';
+      const sel = ((chart.getOption().legend || [])[0] || {}).selected || {};
+      for (const name of names.slice().sort()) {
+        const row = document.createElement('label');
+        row.className = 'driver';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = sel[name] !== false;
+        cb.addEventListener('change', () => {
+          chart.dispatchAction({ type: cb.checked ? 'legendSelect' : 'legendUnSelect', name });
+          updateYAxisToVisible(); // ensure immediate rescale
+        });
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(' ' + name));
+        driverList.appendChild(row);
+      }
+    }
+
+    btnAll.addEventListener('click', () => {
+      for (const name of currentSeriesNames) chart.dispatchAction({ type: 'legendSelect', name });
+      updateYAxisToVisible();
+      syncCheckboxes(true);
+    });
+    btnNone.addEventListener('click', () => {
+      for (const name of currentSeriesNames) chart.dispatchAction({ type: 'legendUnSelect', name });
+      updateYAxisToVisible();
+      syncCheckboxes(false);
+    });
+
+    function syncCheckboxes(val) {
+      const boxes = driverList.querySelectorAll('input[type="checkbox"]');
+      boxes.forEach(b => b.checked = val);
+    }
+
+    // Starter view
+    chart.setOption({
+      backgroundColor: 'transparent',
+      title: { text: 'Select a CSV to plot', left: 'center', top: 'center', textStyle: { color: '#6b6f7b', fontWeight: 500 } },
+      grid: { left: 56, right: 130, top: 42, bottom: 40 },
+      xAxis: { type: 'value', min: 1, max: 10, axisLabel: { color: '#c8c8c8' } },
+      yAxis: { type: 'value', min: -100, max: 1, axisLabel: { color: '#c8c8c8' } },
+      legend: hiddenLegend
+    });
+  </script>
+</body>
+</html>
