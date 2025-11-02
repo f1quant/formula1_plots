@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Gap to P1 by Lap — ECharts (Season → GP → Session + Colors)</title>
+  <title>Formula One Race Visualization</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
@@ -27,25 +27,22 @@
 </head>
 <body>
   <header>
-    <div class="title">ECharts — Step Lines with End Labels</div>
     <label class="small" for="seasonSel">Season</label>
     <select id="seasonSel" title="Season"></select>
     <label class="small" for="gpSel">GP</label>
     <select id="gpSel" title="Grand Prix"></select>
     <label class="small" for="sessionSel">Session</label>
     <select id="sessionSel" title="Session type"></select>
-    <span id="meta" class="small"></span>
+    <!-- <span id="meta" class="small"></span> -->
   </header>
 
   <div class="layout">
     <aside id="sidebar">
       <div class="section">
-        <div class="small">Drivers / lines</div>
         <div class="buttons">
           <button id="btnAll"  type="button">Select all</button>
           <button id="btnNone" type="button">Clear all</button>
         </div>
-        <div class="hint">Toggle lines; y-axis rescales to visible series.</div>
       </div>
       <div id="driverList" aria-label="Driver list"></div>
     </aside>
@@ -175,7 +172,7 @@
           color: col || undefined,                    // series color
           lineStyle: { width: 1.8, opacity: 0.95, color: col || undefined },
           emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
-          blur: { lineStyle: { opacity: 0.15 } },     // dim other series on hover
+          blur: { lineStyle: { opacity: 0.5 } },     // dim other series on hover
           endLabel: { show: true, formatter: '{a}', position: 'right', offset: [6,0], color: col || 'inherit' },
           progressive: 2000,
           animation: false,
@@ -330,7 +327,7 @@
       const rounds = Array.from(byYear.get(year).keys()).sort((a,b) => a - b);
       for (const r of rounds) {
         const meta = byYear.get(year).get(r);
-        const label = `Round ${r} — ${meta.race || meta.circuit || 'Grand Prix'}`;
+        const label = `Round ${r}. ${meta.race || meta.circuit || 'Grand Prix'}`;
         const opt = document.createElement('option');
         opt.value = String(r); opt.textContent = label;
         gpSel.appendChild(opt);
@@ -365,7 +362,7 @@
       const type  = opt.value;
       const file  = opt.dataset.filename;
       const metaR = byYear.get(year)?.get(Number(round));
-      const title = `${year}, Round ${round} (${prettySession(type)}) — ${metaR?.race || metaR?.circuit || ''}`;
+      const title = `${year} Round ${round}. ${metaR?.race || metaR?.circuit || ''} (${prettySession(type)})`;
       await loadCsvAndPlot(file, title, year, round);
     }
 
@@ -428,7 +425,6 @@
       chart.setOption(option, true);
       currentSeriesNames = parsed.rows.map(r => r.label);
       buildDriverList(currentSeriesNames);
-      meta.textContent = `Dataset: ${title} • Laps: ${parsed.lapCount} • Lines: ${currentSeriesNames.length}`;
       updateYAxisToVisible();
     }
 
