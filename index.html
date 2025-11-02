@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Gap to P1 by Lap — ECharts (manifest-driven)</title>
+  <title>Gap to P1 by Lap — ECharts (Season → GP → Session)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
@@ -10,7 +10,7 @@
     body { margin:0; font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); }
     header { padding:10px 14px; background:var(--panel); display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--border); }
     .title { font-weight:600; margin-right:auto; }
-    select { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; min-width: 320px; }
+    select { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; min-width: 160px; }
     .small { color:var(--muted); font-size:12px; }
     .layout { display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px); }
     #sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; }
@@ -27,8 +27,12 @@
 <body>
   <header>
     <div class="title">ECharts — Step Lines with End Labels</div>
-    <!-- Dropdown populated from driver_lines_filenames.csv -->
-    <select id="dataset" title="Choose dataset"></select>
+    <label class="small">Season</label>
+    <select id="seasonSel" title="Season"></select>
+    <label class="small">GP</label>
+    <select id="gpSel" title="Grand Prix"></select>
+    <label class="small">Session</label>
+    <select id="sessionSel" title="Session type"></select>
     <span id="meta" class="small"></span>
   </header>
 
@@ -48,15 +52,15 @@
   </div>
 
   <script>
-    // ---------------- Core chart setup ----------------
+    // ---------------- Chart setup ----------------
     const chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
     window.addEventListener('resize', () => chart.resize());
-
-    // Hidden legend drives selection state (checkboxes dispatch legend actions)
     const hiddenLegend = { show: false, selected: {} };
 
     // DOM refs
-    const datasetSel = document.getElementById('dataset');
+    const seasonSel  = document.getElementById('seasonSel');
+    const gpSel      = document.getElementById('gpSel');
+    const sessionSel = document.getElementById('sessionSel');
     const meta       = document.getElementById('meta');
     const driverList = document.getElementById('driverList');
     const btnAll     = document.getElementById('btnAll');
@@ -64,11 +68,12 @@
 
     // State
     let currentSeriesNames = [];
-    let lastYFallback = { min: -100, max: 1 }; // used if everything is hidden
-    let manifestItems = [];                    // [{year,round_no,circuit,race,type,filename,label}, ...]
+    let lastYFallback = { min: -100, max: 1 };
+    let manifestItems = [];   // raw rows from driver_lines_filenames.csv
+    // byYear: Map<year, Map<round_no, {race, circuit, sessions: [{type, filename}]}>>
+    const byYear = new Map();
 
-    // ---------------- CSV utilities ----------------
-    // RFC4180-ish split for a single line (handles quoted commas and "" escapes)
+    // ---------------- CSV helpers ----------------
     function splitCSVLine(line) {
       const out = []; let cur = ''; let inQ = false;
       for (let i = 0; i < line.length; i++) {
@@ -76,16 +81,12 @@
         if (ch === '"') {
           if (inQ && line[i+1] === '"') { cur += '"'; i++; }
           else { inQ = !inQ; }
-        } else if (ch === ',' && !inQ) {
-          out.push(cur.trim()); cur = '';
-        } else {
-          cur += ch;
-        }
+        } else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
       }
       out.push(cur.trim());
       return out;
     }
-
     function parseCSVToObjects(text) {
       const lines = text.split(/\r?\n/).filter(s => s.trim().length);
       if (!lines.length) return [];
@@ -97,7 +98,6 @@
         return obj;
       });
     }
-
     function parseDriverLines(csvText) {
       const lines = csvText.split(/\r?\n/).filter(s => s.trim().length);
       const rows = []; let lapCount = 0; const allY = [];
@@ -142,7 +142,7 @@
           showSymbol: false,
           lineStyle: { width: 1.8, opacity: 0.95 },
           emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
-          blur: { lineStyle: { opacity: 0.15 } },  // dim other series on hover
+          blur: { lineStyle: { opacity: 0.15 } }, // controls how dark others go on hover
           endLabel: { show: true, formatter: '{a}', position: 'right', offset: [6,0], color: 'inherit' },
           progressive: 2000,
           animation: false,
@@ -198,7 +198,6 @@
       };
     }
 
-    // Recompute y-axis to visible series
     function updateYAxisToVisible() {
       const opt = chart.getOption();
       const legendSel = (opt.legend && opt.legend[0] && opt.legend[0].selected) || {};
@@ -218,13 +217,13 @@
       }
       const span = Math.max(1e-6, max - min);
       const pad  = Math.max(0.02 * span, 0.5);
-      const yMin = Math.min(min - pad, 0);   // keep baseline visible
+      const yMin = Math.min(min - pad, 0);
       const yMax = Math.max(max + pad, 0.5);
       chart.setOption({ yAxis: { min: Math.floor(yMin), max: Math.ceil(yMax) } });
     }
-    chart.on('legendselectchanged', updateYAxisToVisible); // backup
+    chart.on('legendselectchanged', updateYAxisToVisible);
 
-    // ---------------- Sidebar: line toggles ----------------
+    // ---------------- Sidebar: toggles ----------------
     function buildDriverList(names) {
       driverList.innerHTML = '';
       const sel = ((chart.getOption().legend || [])[0] || {}).selected || {};
@@ -236,14 +235,13 @@
         cb.checked = sel[name] !== false;
         cb.addEventListener('change', () => {
           chart.dispatchAction({ type: cb.checked ? 'legendSelect' : 'legendUnSelect', name });
-          updateYAxisToVisible(); // immediate rescale
+          updateYAxisToVisible();
         });
         row.appendChild(cb);
         row.appendChild(document.createTextNode(' ' + name));
         driverList.appendChild(row);
       }
     }
-
     function syncCheckboxes(val) {
       const boxes = driverList.querySelectorAll('input[type="checkbox"]');
       boxes.forEach(b => b.checked = val);
@@ -257,62 +255,147 @@
       updateYAxisToVisible(); syncCheckboxes(false);
     });
 
-    // ---------------- Manifest + dataset loading ----------------
+    // ---------------- Manifest + 3-level selection ----------------
+    function prettySession(typeRaw) {
+      const t = (typeRaw || '').toString().trim().toUpperCase();
+      if (t === 'R' || t === 'RACE')   return 'Race';
+      if (t === 'S' || t === 'SPRINT') return 'Sprint';
+      // Fallback: Title Case
+      return t.charAt(0) + t.slice(1).toLowerCase();
+    }
+
+    function buildIndex() {
+      byYear.clear();
+      for (const o of manifestItems) {
+        const year = (o.year || '').trim();
+        const round = parseInt(o.round_no, 10);
+        if (!year || !Number.isFinite(round)) continue;
+        if (!byYear.has(year)) byYear.set(year, new Map());
+        const yMap = byYear.get(year);
+        if (!yMap.has(round)) yMap.set(round, { race: o.race || '', circuit: o.circuit || '', sessions: [] });
+        yMap.get(round).sessions.push({ type: o.type || '', filename: (o.filename || '').trim() });
+        // Prefer the last non-empty race/circuit strings to fill metadata
+        if (o.race)    yMap.get(round).race = o.race;
+        if (o.circuit) yMap.get(round).circuit = o.circuit;
+      }
+    }
+
+    function populateSeasons() {
+      seasonSel.innerHTML = '';
+      const years = Array.from(byYear.keys()).sort((a,b) => Number(b) - Number(a));
+      for (const y of years) {
+        const opt = document.createElement('option');
+        opt.value = y; opt.textContent = y;
+        seasonSel.appendChild(opt);
+      }
+      seasonSel.disabled = years.length === 0;
+    }
+
+    function populateGPs(year) {
+      gpSel.innerHTML = '';
+      sessionSel.innerHTML = '';
+      if (!byYear.has(year)) { gpSel.disabled = true; sessionSel.disabled = true; return; }
+      const rounds = Array.from(byYear.get(year).keys()).sort((a,b) => a - b);
+      for (const r of rounds) {
+        const meta = byYear.get(year).get(r);
+        const label = `Round ${r} — ${meta.race || meta.circuit || 'Grand Prix'}`;
+        const opt = document.createElement('option');
+        opt.value = String(r); opt.textContent = label;
+        gpSel.appendChild(opt);
+      }
+      gpSel.disabled = rounds.length === 0;
+    }
+
+    function populateSessions(year, round) {
+      sessionSel.innerHTML = '';
+      const meta = byYear.get(year)?.get(Number(round));
+      if (!meta) { sessionSel.disabled = true; return; }
+      // Deduplicate by type (keep first filename per type)
+      const seen = new Map();
+      for (const s of meta.sessions) {
+        const key = (s.type || '').toString();
+        if (!seen.has(key) && s.filename) seen.set(key, s.filename);
+      }
+      const entries = Array.from(seen.entries());
+      for (const [type, filename] of entries) {
+        const opt = document.createElement('option');
+        opt.value = type; opt.textContent = prettySession(type);
+        opt.dataset.filename = filename;
+        sessionSel.appendChild(opt);
+      }
+      sessionSel.disabled = entries.length === 0;
+    }
+
+    async function onSessionChange() {
+      const year  = seasonSel.value;
+      const round = gpSel.value;
+      const opt   = sessionSel.options[sessionSel.selectedIndex];
+      if (!opt) return;
+      const type  = opt.value;
+      const file  = opt.dataset.filename;
+      const metaR = byYear.get(year)?.get(Number(round));
+      const title = `${year}, Round ${round} (${prettySession(type)}) — ${metaR?.race || metaR?.circuit || ''}`;
+      await loadCsvAndPlot(file, title);
+    }
+
     async function loadManifest() {
-      datasetSel.disabled = true;
-      datasetSel.innerHTML = '<option>Loading…</option>';
+      seasonSel.disabled = gpSel.disabled = sessionSel.disabled = true;
       try {
         const text = await fetch('driver_lines_filenames.csv', { cache: 'no-store' }).then(r => r.text());
         const objs = parseCSVToObjects(text);
-        // Expect columns: year, round_no, circuit, race, type, filename
-        manifestItems = objs
-          .filter(o => (o.filename || '').trim().length)
-          .map(o => {
-            const label =
-              `${o.year || ''} • Round ${o.round_no || ''} • ${o.circuit || ''} • ${o.type || ''}${o.race ? ' • ' + o.race : ''}`;
-            return { ...o, label, filename: o.filename.trim() };
-          });
-
-        datasetSel.innerHTML = '';
-        for (const item of manifestItems) {
-          const opt = document.createElement('option');
-          opt.value = item.filename;
-          opt.textContent = item.label;
-          datasetSel.appendChild(opt);
-        }
-        datasetSel.disabled = manifestItems.length === 0;
-
-        if (manifestItems.length) {
-          await loadCsvAndPlot(manifestItems[0].filename, manifestItems[0].label);
+        // Expect header: year, round_no, circuit, race, type, filename
+        manifestItems = objs.filter(o => (o.filename || '').trim().length);
+        buildIndex();
+        populateSeasons();
+        if (seasonSel.options.length) {
+          seasonSel.selectedIndex = 0;
+          populateGPs(seasonSel.value);
+          if (gpSel.options.length) {
+            gpSel.selectedIndex = 0;
+            populateSessions(seasonSel.value, gpSel.value);
+            if (sessionSel.options.length) {
+              sessionSel.selectedIndex = 0;
+              await onSessionChange(); // auto-plot first available combo
+            }
+          }
         } else {
           meta.textContent = 'No entries in driver_lines_filenames.csv';
         }
       } catch (e) {
-        datasetSel.innerHTML = '<option>Error loading manifest</option>';
-        meta.textContent = 'Failed to load driver_lines_filenames.csv';
         console.error(e);
+        meta.textContent = 'Failed to load driver_lines_filenames.csv';
+      } finally {
+        seasonSel.disabled = false;
+        gpSel.disabled = false;
+        sessionSel.disabled = false;
       }
     }
 
-    datasetSel.addEventListener('change', async () => {
-      const idx = datasetSel.selectedIndex;
-      if (idx < 0) return;
-      const item = manifestItems[idx];
-      await loadCsvAndPlot(item.filename, item.label);
+    seasonSel.addEventListener('change', () => {
+      populateGPs(seasonSel.value);
+      if (gpSel.options.length) gpSel.selectedIndex = 0;
+      populateSessions(seasonSel.value, gpSel.value);
+      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
     });
+    gpSel.addEventListener('change', () => {
+      populateSessions(seasonSel.value, gpSel.value);
+      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
+    });
+    sessionSel.addEventListener('change', onSessionChange);
 
-    async function loadCsvAndPlot(path, labelForTitle) {
+    // ---------------- Plotting ----------------
+    async function loadCsvAndPlot(path, title) {
       const csv = await fetch(path, { cache: 'no-store' }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status} for ${path}`);
         return r.text();
       });
       const parsed = parseDriverLines(csv);
-      const option = buildOption(parsed, labelForTitle || path.replace(/\.[^.]+$/, ''));
+      const option = buildOption(parsed, title);
       chart.setOption(option, true);
       currentSeriesNames = parsed.rows.map(r => r.label);
       buildDriverList(currentSeriesNames);
-      meta.textContent = `Dataset: ${labelForTitle || path} • Laps: ${parsed.lapCount} • Lines: ${currentSeriesNames.length}`;
-      updateYAxisToVisible(); // initial fit
+      meta.textContent = `Dataset: ${title} • Laps: ${parsed.lapCount} • Lines: ${currentSeriesNames.length}`;
+      updateYAxisToVisible();
     }
 
     // ---------------- Boot ----------------
