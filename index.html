@@ -283,7 +283,7 @@
     function buildDriverList(names) {
       driverList.innerHTML = '';
       const sel = ((chart.getOption().legend || [])[0] || {}).selected || {};
-      for (const name of names.slice().sort()) {
+      for (const name of names) {
         const row = document.createElement('label');
         row.className = 'driver';
         const cb = document.createElement('input');
@@ -436,6 +436,21 @@
     sessionSel.addEventListener('change', onSessionChange);
 
     // ---------------- Plotting ----------------
+    // Compute checkbox order: finishers by final gap asc, then DNFs by laps desc, then gap on their last lap asc.
+    function computeDriverOrder(parsed) {
+      const { rows, lapCount } = parsed;
+      const entries = rows.map(r => {
+        const laps = r.values.length;
+        const isFull = laps === lapCount;
+        const lastGap = r.values[laps - 1];
+        return { name: r.label, isFull, laps, lastGap };
+      });
+      const finishers = entries.filter(e => e.isFull)
+        .sort((a, b) => (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
+      const dnfs = entries.filter(e => !e.isFull)
+        .sort((a, b) => (b.laps - a.laps) || (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
+      return [...finishers, ...dnfs].map(e => e.name);
+    }
     async function loadCsvAndPlot(path, title, year, round) {
       const csv = await fetch(path, { cache: 'no-store' }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status} for ${path}`);
@@ -443,12 +458,15 @@
       });
       const parsed = parseDriverLines(csv);
 
+      // Order driver checkboxes as requested
+      const orderedNames = computeDriverOrder(parsed);
+
       // Build a per-driver color resolver for the active year/round
       const colorLookup = (driver) => getColorFor(year, round, driver);
 
       const option = buildOption(parsed, title, colorLookup);
       chart.setOption(option, true);
-      currentSeriesNames = parsed.rows.map(r => r.label);
+      currentSeriesNames = orderedNames;
       buildDriverList(currentSeriesNames);
       updateYAxisToVisible();
     }
