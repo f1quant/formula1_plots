@@ -25,6 +25,12 @@
     .hint { color:var(--muted); font-size:12px; margin-top:6px; }
     .credit { position:fixed; left:12px; bottom:10px; z-index:9999; font-size:12px; color:var(--muted); text-decoration:none; opacity:0.9; }
     .credit:hover { text-decoration:underline; opacity:1; }
+
+    input[type="number"]{
+      background:#11141a; color:var(--fg);
+      border:1px solid #2a2f3a; padding:6px 8px;
+      border-radius:8px; width:90px;
+      }
   </style>
 </head>
 <body>
@@ -35,7 +41,10 @@
     <select id="gpSel" title="Grand Prix"></select>
     <label class="small" for="sessionSel">Session</label>
     <select id="sessionSel" title="Session type"></select>
-    <!-- <span id="meta" class="small"></span> -->
+    <label class="small" for="lapMin">Lap min</label>
+    <input id="lapMin" type="number" min="1" step="1" value="1" title="Min lap" />
+    <label class="small" for="lapMax">Lap max</label>
+    <input id="lapMax" type="number" min="1" step="1" value="1" title="Max lap" />
   </header>
 
   <div class="layout">
@@ -65,6 +74,8 @@
     const driverList = document.getElementById('driverList');
     const btnAll     = document.getElementById('btnAll');
     const btnNone    = document.getElementById('btnNone');
+    const lapMinInput = document.getElementById('lapMin');
+    const lapMaxInput = document.getElementById('lapMax');
 
     // State
     let currentSeriesNames = [];
@@ -331,27 +342,49 @@
     // Recompute y-axis to visible series
     function updateYAxisToVisible() {
       const opt = chart.getOption();
+
+      // Which series are visible?
       const legendSel = (opt.legend && opt.legend[0] && opt.legend[0].selected) || {};
-      const series = (opt.series || []).filter(s =>
-        s.type === 'line' && s.name !== '__baseline__' && (legendSel[s.name] !== false)
+      const series = (opt.series || []).filter(
+        s => s.type === 'line' && s.name !== '__baseline__' && (legendSel[s.name] !== false)
       );
-      let min = Infinity, max = -Infinity;
+
+      // Current x-range (fallbacks are safe defaults)
+      const xa = (opt.xAxis && opt.xAxis[0]) || {};
+      let xMin = Number(xa.min);
+      let xMax = Number(xa.max);
+      if (!Number.isFinite(xMin)) xMin = 1;
+      if (!Number.isFinite(xMax)) xMax = (Number.isFinite(rightXGlobal) ? rightXGlobal + 0.1 : xMin + 1);
+
+      // Scan only points inside [xMin, xMax]
+      let ymin = Infinity, ymax = -Infinity, found = false;
       for (const s of series) {
         for (const pt of s.data) {
-          const y = Array.isArray(pt) ? pt[1] : (pt && pt.value ? pt.value[1] : null);
-          if (Number.isFinite(y)) { if (y < min) min = y; if (y > max) max = y; }
+          const val = Array.isArray(pt) ? pt : (pt && pt.value);
+          if (!val || val.length < 2) continue;
+          const x = Number(val[0]), y = Number(val[1]);
+          if (Number.isFinite(x) && Number.isFinite(y) && x >= xMin && x <= xMax) {
+            if (y < ymin) ymin = y;
+            if (y > ymax) ymax = y;
+            found = true;
+          }
         }
       }
-      if (!series.length || !Number.isFinite(min) || !Number.isFinite(max)) {
+
+      if (!found) {
         chart.setOption({ yAxis: { min: lastYFallback.min, max: lastYFallback.max } });
         return;
       }
-      const span = Math.max(1e-6, max - min);
+
+      // Padding & pin 0 into view
+      const span = Math.max(1e-6, ymax - ymin);
       const pad  = Math.max(0.02 * span, 0.5);
-      const yMin = Math.min(min - pad, 0);
-      const yMax = Math.max(max + pad, 0.5);
+      const yMin = Math.min(ymin - pad, 0);
+      const yMax = Math.max(ymax + pad, 0.5);
+
       chart.setOption({ yAxis: { min: Math.floor(yMin), max: Math.ceil(yMax) } });
     }
+
 
     // NEW: recompute displayed series so each lap is relative to the max value among SELECTED drivers
     function recomputeSeriesRelativeToSelection() {
@@ -386,6 +419,30 @@
       chart.setOption({ series: updates.map(u => ({ name: u.name, data: u.data })) });
     }
 
+    function applyLapRange() {
+      // Guard if data not ready yet
+      if (!originalLapCount) return;
+
+      let min = parseInt(lapMinInput.value, 10);
+      let max = parseInt(lapMaxInput.value, 10);
+
+      if (!Number.isFinite(min)) min = 1;
+      if (!Number.isFinite(max)) max = originalLapCount;
+
+      // Clamp to [1, originalLapCount]
+      min = Math.max(1, Math.min(min, originalLapCount));
+      max = Math.max(1, Math.min(max, originalLapCount));
+
+      // Ensure min ≤ max
+      if (min > max) [min, max] = [max, min];
+
+      // Keep a little extra room for end labels if we're showing the final lap
+      const maxForAxis = (max === originalLapCount) ? (rightXGlobal + 0.1) : (max + 0.1);
+
+      chart.setOption({ xAxis: { min, max: maxForAxis } });
+      updateYAxisToVisible();
+    }
+    
     // doesn't get called because the legend is hidden, but kept for reference
     // chart.on('legendselectchanged', () => {
     //   recomputeSeriesRelativeToSelection();
@@ -572,6 +629,8 @@
       if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
     });
     sessionSel.addEventListener('change', onSessionChange);
+    lapMinInput.addEventListener('input', applyLapRange);
+    lapMaxInput.addEventListener('input', applyLapRange);
 
     // ---------------- Plotting ----------------
     // Compute checkbox order: finishers by final gap asc, then DNFs by laps desc, then gap on their last lap asc.
@@ -614,6 +673,15 @@
       const option = buildOption(parsed, title, colorLookup);
       chart.setOption(option, true);
       currentSeriesNames = orderedNames;
+
+      // Initialize lap-range inputs for this dataset
+      lapMinInput.min = 1;
+      lapMaxInput.min = 1;
+      lapMinInput.max = originalLapCount;
+      lapMaxInput.max = originalLapCount;
+      lapMinInput.value = 1;
+      lapMaxInput.value = originalLapCount;
+      applyLapRange();   // set x-axis to [1 .. full race] with padding at the end
 
       // DEFAULT SELECTION: only the top 5 drivers (by finishing order / smallest gap to P1) selected
       const TOP_N = 5;
