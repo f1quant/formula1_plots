@@ -492,7 +492,7 @@
           seasonSel.selectedIndex = 0;
           populateGPs(seasonSel.value);
           if (gpSel.options.length) {
-            gpSel.selectedIndex = 0;
+            gpSel.selectedIndex = gpSel.options.length - 1; // latest GP
             populateSessions(seasonSel.value, gpSel.value);
             if (sessionSel.options.length) {
               sessionSel.selectedIndex = 0;
@@ -540,6 +540,7 @@
         .sort((a, b) => (b.laps - a.laps) || (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
       return [...finishers, ...dnfs].map(e => e.name);
     }
+
     async function loadCsvAndPlot(path, title, year, round, sessionType) {
       // NEW: keep track of current selection for tooltip lookups
       currentSelection = { year, round, sessionType };
@@ -558,6 +559,15 @@
       const option = buildOption(parsed, title, colorLookup);
       chart.setOption(option, true);
       currentSeriesNames = orderedNames;
+
+      // DEFAULT SELECTION: only the top 5 drivers (by finishing order / smallest gap to P1) selected
+      const TOP_N = 5;
+      const topSet = new Set(orderedNames.slice(0, TOP_N));
+      for (const name of orderedNames) {
+        chart.dispatchAction({ type: topSet.has(name) ? 'legendSelect' : 'legendUnSelect', name });
+      }
+
+      // Build sidebar to reflect the selection state and fit axes to visible series
       buildDriverList(currentSeriesNames);
       updateYAxisToVisible();
     }
