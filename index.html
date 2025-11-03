@@ -68,6 +68,10 @@
     let currentSeriesNames = [];
     let lastYFallback = { min: -100, max: 1 };
     let manifestItems = [];   // rows from driver_lines_filenames.csv
+
+    // NEW: current selection for tooltip context
+    let currentSelection = { year: null, round: null, sessionType: null };
+
     // byYear: Map<year, Map<round_no, {race, circuit, sessions: [{type, filename}]>>>
     const byYear = new Map();
 
@@ -231,6 +235,8 @@
         backgroundColor: 'transparent',
         title: { text: titleText || 'Gap to P1 by Lap', left: 'center', top: 6, textStyle: { color: '#e8e8e8', fontSize: 16, fontWeight: 600 } },
         grid: { left: 56, right: 130, top: 42, bottom: 40 },
+
+        // UPDATED tooltip with driver headshot card
         tooltip: {
           show: true,
           trigger: 'item',
@@ -239,16 +245,44 @@
           borderColor: '#2a2f3a',
           backgroundColor: 'rgba(26,29,36,0.96)',
           textStyle: { color: '#e8e8e8' },
+          extraCssText: 'padding:10px 12px;border-radius:10px',
           formatter: (p) => {
             const v = Array.isArray(p.value) ? p.value : p.data?.value || p.data;
             const lap = Array.isArray(v) ? v[0] : v?.[0];
             const gap = Array.isArray(v) ? v[1] : v?.[1];
-            if (typeof lap === 'number' && typeof gap === 'number') {
-              return `${p.marker}<b>${p.seriesName}</b><br/>Lap ${lap}: ${gap.toFixed(3)} s`;
+
+            const code = p.seriesName; // driver code/label in CSV
+            const sel  = currentSelection || {};
+            const info = getInfoFor(sel.year, sel.round, code, sel.sessionType);
+
+            if (info && info.headshotUrl) {
+              const fullName = info.fullName || code;
+              const teamName = info.teamName || '';
+              const gapLine  = (typeof lap === 'number' && typeof gap === 'number')
+                ? `<div style="margin-top:4px">Lap ${lap}: ${gap.toFixed(3)} s</div>`
+                : '';
+              return `
+                <div style="display:flex;align-items:center;gap:10px;min-width:220px;">
+                  <img src="${info.headshotUrl}"
+                       alt="${fullName}"
+                       width="50" height="50"
+                       style="border-radius:50%;object-fit:cover;border:1px solid #2a2f3a;flex:0 0 auto" />
+                  <div style="line-height:1.25">
+                    <div style="font-weight:600">${fullName} <span style="color:#8b8b8b">(${code})</span></div>
+                    ${teamName ? `<div style="color:#8b8b8b;font-size:12px">${teamName}</div>` : ''}
+                    ${gapLine}
+                  </div>
+                </div>
+              `;
             }
-            return `${p.marker}<b>${p.seriesName}</b>`;
+
+            if (typeof lap === 'number' && typeof gap === 'number') {
+              return `${p.marker}<b>${code}</b><br/>Lap ${lap}: ${gap.toFixed(3)} s`;
+            }
+            return `${p.marker}<b>${code}</b>`;
           }
         },
+
         legend: hiddenLegend,
         xAxis: {
           type: 'value',
@@ -505,6 +539,9 @@
       return [...finishers, ...dnfs].map(e => e.name);
     }
     async function loadCsvAndPlot(path, title, year, round, sessionType) {
+      // NEW: keep track of current selection for tooltip lookups
+      currentSelection = { year, round, sessionType };
+
       const csv = await fetch(path, { cache: 'no-store' }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status} for ${path}`);
         return r.text();
@@ -536,7 +573,7 @@
     // Ensure driver info is ready before first plot
     window.addEventListener('DOMContentLoaded', async () => {
       try {
-        await loadDriverInfo();   // loads driver_info.csv (colors + names/teams)
+        await loadDriverInfo();   // loads driver_info.csv (colors + names/teams/headshots)
       } catch (e) {
         console.warn('No driver_info.csv or failed to parse; falling back to default labels/colors.', e);
       }
