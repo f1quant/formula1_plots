@@ -68,11 +68,12 @@
     let currentSeriesNames = [];
     let lastYFallback = { min: -100, max: 1 };
     let manifestItems = [];   // rows from driver_lines_filenames.csv
-    // byYear: Map<year, Map<round_no, {race, circuit, sessions: [{type, filename}]}>>
+    // byYear: Map<year, Map<round_no, {race, circuit, sessions: [{type, filename}]>>>
     const byYear = new Map();
 
-    // driverColors: Map("year|round" => Map(driver => hexColor))
-    const driverColors = new Map();
+    // driverInfo: Map(key => Map(driver => { color, fullName, teamName, headshotUrl }))
+    // key can be `${year}|${round}` or `${year}|${round}|${SESSION}` (uppercased)
+    const driverInfo = new Map();
 
     // ---------------- CSV helpers ----------------
     function splitCSVLine(line) {
@@ -121,30 +122,63 @@
       return { rows, lapCount, minY, maxY };
     }
 
-    // ---------------- Colors ----------------
-    async function loadDriverColors() {
-      // expects driver_colors.csv with columns: year, round_no, driver, color
-      const text = await fetch('driver_colors.csv', { cache: 'no-store' }).then(r => {
-        if (!r.ok) throw new Error('Failed to load driver_colors.csv');
+    // ---------------- Driver info ----------------
+    async function loadDriverInfo() {
+      // expects driver_info.csv with columns:
+      // year, round_no, session_type, driver, color, TeamName, FullName, HeadshotUrl
+      const text = await fetch('driver_info.csv', { cache: 'no-store' }).then(r => {
+        if (!r.ok) throw new Error('Failed to load driver_info.csv');
         return r.text();
       });
       const rows = parseCSVToObjects(text);
-      driverColors.clear();
+      driverInfo.clear();
       for (const r of rows) {
         const year = (r.year || '').trim();
         const round = parseInt(r.round_no, 10);
         const drv = (r.driver || '').trim();
-        const col = (r.color || '').trim();
-        if (!year || !Number.isFinite(round) || !drv || !/^#?[0-9a-f]{6}$/i.test(col.replace('#',''))) continue;
-        const k = `${year}|${round}`;
-        if (!driverColors.has(k)) driverColors.set(k, new Map());
-        const hex = col.startsWith('#') ? col : ('#' + col);
-        driverColors.get(k).set(drv, hex);
+        const sess = (r.session_type || '').trim().toUpperCase();
+        const colRaw = (r.color || '').trim();
+        const colOk = /^#?[0-9a-f]{6}$/i.test(colRaw.replace('#',''));
+        const color = colOk ? (colRaw.startsWith('#') ? colRaw : ('#' + colRaw)) : null;
+        const teamName = (r.teamname || '').trim();
+        const fullName = (r.fullname || '').trim();
+        const headshotUrl = (r.headshoturl || '').trim();
+        if (!year || !Number.isFinite(round) || !drv) continue;
+
+        const kBase = `${year}|${round}`;
+        if (!driverInfo.has(kBase)) driverInfo.set(kBase, new Map());
+        const baseMap = driverInfo.get(kBase);
+        const existing = baseMap.get(drv) || {};
+        baseMap.set(drv, {
+          color: color ?? existing.color ?? null,
+          fullName: fullName || existing.fullName || '',
+          teamName: teamName || existing.teamName || '',
+          headshotUrl: headshotUrl || existing.headshotUrl || ''
+        });
+
+        if (sess) {
+          const kSess = `${kBase}|${sess}`;
+          if (!driverInfo.has(kSess)) driverInfo.set(kSess, new Map());
+          const sessMap = driverInfo.get(kSess);
+          const ex2 = sessMap.get(drv) || {};
+          sessMap.set(drv, {
+            color: color ?? ex2.color ?? null,
+            fullName: fullName || ex2.fullName || '',
+            teamName: teamName || ex2.teamName || '',
+            headshotUrl: headshotUrl || ex2.headshotUrl || ''
+          });
+        }
       }
     }
-    function getColorFor(year, round, driver) {
-      const k = `${year}|${Number(round)}`;
-      return driverColors.get(k)?.get(driver) || null;
+    function getInfoFor(year, round, driver, sessionType) {
+      const baseKey = `${year}|${Number(round)}`;
+      const sessKey = `${baseKey}|${(sessionType||'').toString().toUpperCase()}`;
+      return driverInfo.get(sessKey)?.get(driver)
+          || driverInfo.get(baseKey)?.get(driver)
+          || null;
+    }
+    function getColorFor(year, round, driver, sessionType) {
+      return getInfoFor(year, round, driver, sessionType)?.color || null;
     }
 
     // ---------------- ECharts option builders ----------------
@@ -285,19 +319,25 @@
       const sel = ((chart.getOption().legend || [])[0] || {}).selected || {};
       const year = seasonSel.value;
       const round = gpSel.value;
+      const sessionType = (sessionSel.value || '').toString();
       for (const name of names) {
+        const info = getInfoFor(year, round, name, sessionType);
+        const labelText = info
+          ? `${info.fullName || name} (${name})`
+          : name;
+
         const row = document.createElement('label');
         row.className = 'driver';
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = sel[name] !== false;
 
-        // Create a colored name span using per-driver color for the current year/round
+        // Create a colored name span using per-driver color for the current selection
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = ' ' + name;
-        const col = getColorFor(year, round, name);
+        nameSpan.textContent = ' ' + labelText;
+        const col = getColorFor(year, round, name, sessionType);
         if (col) {
-          nameSpan.style.color = col;            // color the driver name
+          nameSpan.style.color = col;            // color the driver display text
           try { cb.style.accentColor = col; }    // modern browsers: tint the checkbox
           catch (e) { /* noop if unsupported */ }
         }
@@ -401,7 +441,7 @@
       const file  = opt.dataset.filename;
       const metaR = byYear.get(year)?.get(Number(round));
       const title = `${year} Round ${round}. ${metaR?.race || metaR?.circuit || ''} (${prettySession(type)})`;
-      await loadCsvAndPlot(file, title, year, round);
+      await loadCsvAndPlot(file, title, year, round, type);
     }
 
     async function loadManifest() {
@@ -424,11 +464,11 @@
             }
           }
         } else {
-          meta.textContent = 'No entries in driver_lines_filenames.csv';
+          if (meta) meta.textContent = 'No entries in driver_lines_filenames.csv';
         }
       } catch (e) {
         console.error(e);
-        meta.textContent = 'Failed to load driver_lines_filenames.csv';
+        if (meta) meta.textContent = 'Failed to load driver_lines_filenames.csv';
       } finally {
         seasonSel.disabled = false;
         gpSel.disabled = false;
@@ -464,7 +504,7 @@
         .sort((a, b) => (b.laps - a.laps) || (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
       return [...finishers, ...dnfs].map(e => e.name);
     }
-    async function loadCsvAndPlot(path, title, year, round) {
+    async function loadCsvAndPlot(path, title, year, round, sessionType) {
       const csv = await fetch(path, { cache: 'no-store' }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status} for ${path}`);
         return r.text();
@@ -474,8 +514,8 @@
       // Order driver checkboxes as requested
       const orderedNames = computeDriverOrder(parsed);
 
-      // Build a per-driver color resolver for the active year/round
-      const colorLookup = (driver) => getColorFor(year, round, driver);
+      // Build a per-driver color resolver for the active selection
+      const colorLookup = (driver) => getColorFor(year, round, driver, sessionType);
       const option = buildOption(parsed, title, colorLookup);
       chart.setOption(option, true);
       currentSeriesNames = orderedNames;
@@ -493,12 +533,12 @@
       legend: hiddenLegend
     });
 
-    // Ensure colors are ready before first plot
+    // Ensure driver info is ready before first plot
     window.addEventListener('DOMContentLoaded', async () => {
       try {
-        await loadDriverColors();   // loads driver_colors.csv once
+        await loadDriverInfo();   // loads driver_info.csv (colors + names/teams)
       } catch (e) {
-        console.warn('No driver_colors.csv or failed to parse; falling back to default colors.', e);
+        console.warn('No driver_info.csv or failed to parse; falling back to default labels/colors.', e);
       }
       await loadManifest();        // loads driver_lines_filenames.csv and kicks off first plot
     });
