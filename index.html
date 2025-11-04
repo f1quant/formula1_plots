@@ -387,35 +387,40 @@
 
 
     // NEW: recompute displayed series so each lap is relative to the max value among SELECTED drivers
-    function recomputeSeriesRelativeToSelection() {
-      if (!originalLapCount) return; // not ready
+    function recomputeSeriesRelativeToSelection(rangeMax) {
+      if (!originalLapCount) return;
       const opt = chart.getOption();
       const legendSel = (opt.legend && opt.legend[0] && opt.legend[0].selected) || {};
       const selected = currentSeriesNames.filter(n => legendSel[n] !== false);
-
-      // For each lap i, compute max over selected drivers that have that lap
-      const lapMax = new Array(originalLapCount);
-      for (let i = 0; i < originalLapCount; i++) {
+      const R = Math.max(1, Math.min(rangeMax || originalLapCount, originalLapCount));
+      // compute lapMax for 0..R-1 across selected drivers
+      const lapMax = new Array(R);
+      for (let i = 0; i < R; i++) {
         let any = false, m = -Infinity;
         for (const name of selected) {
           const arr = originalValues.get(name);
           if (arr && arr.length > i) { any = true; if (arr[i] > m) m = arr[i]; }
         }
-        lapMax[i] = any ? m : 0; // if no selected drivers have this lap, subtract 0
+        lapMax[i] = any ? m : 0;
       }
 
-      // Build series updates using ORIGINAL values, without mutating them
+      const anchorX = (R === originalLapCount) ? rightXGlobal : (R + 0.1);
       const updates = [];
       for (const name of currentSeriesNames) {
         const arr = originalValues.get(name) || [];
-        const adjusted = arr.map((v, i) => v - lapMax[i]);
-        const isFull = arr.length === originalLapCount;
+        const len = Math.min(arr.length, R);
+        const adjusted = new Array(len);
+        for (let i = 0; i < len; i++) adjusted[i] = arr[i] - lapMax[i];
+
         const data = adjusted.map((y, i) => [i + 1, y]);
-        if (isFull && adjusted.length) {
-          data.push({ value: [rightXGlobal, adjusted[adjusted.length - 1]], tooltip: { show: false }, emphasis: { disabled: true } });
+        // keep end label only for full-length finishers
+        const isFull = (arr.length === originalLapCount);
+        if (isFull && len > 0) {
+          data.push({ value: [anchorX, adjusted[len - 1]], tooltip: { show: false }, emphasis: { disabled: true } });
         }
         updates.push({ name, data });
       }
+
       chart.setOption({ series: updates.map(u => ({ name: u.name, data: u.data })) });
     }
 
@@ -440,6 +445,7 @@
       const maxForAxis = (max === originalLapCount) ? (rightXGlobal + 0.1) : (max + 0.1);
 
       chart.setOption({ xAxis: { min, max: maxForAxis } });
+      recomputeSeriesRelativeToSelection(max);
       updateYAxisToVisible();
     }
     
@@ -481,7 +487,8 @@
         cb.addEventListener('change', () => {
           chart.dispatchAction({ type: cb.checked ? 'legendSelect' : 'legendUnSelect', name });
           // recompute + axis handled by legendselectchanged listener
-          recomputeSeriesRelativeToSelection();
+          const currentMax = Number(chart.getOption().xAxis?.[0]?.max) || originalLapCount;
+          recomputeSeriesRelativeToSelection(Math.min(Math.ceil(currentMax), originalLapCount));
           updateYAxisToVisible();
         });
         row.appendChild(cb);
@@ -495,13 +502,15 @@
     }
     btnAll.addEventListener('click', () => {
       for (const name of currentSeriesNames) chart.dispatchAction({ type: 'legendSelect', name });
-      recomputeSeriesRelativeToSelection();
+      const currentMax = Number(chart.getOption().xAxis?.[0]?.max) || originalLapCount;
+      recomputeSeriesRelativeToSelection(Math.min(Math.ceil(currentMax), originalLapCount));
       updateYAxisToVisible();
       syncCheckboxes(true);
     });
     btnNone.addEventListener('click', () => {
       for (const name of currentSeriesNames) chart.dispatchAction({ type: 'legendUnSelect', name });
-      recomputeSeriesRelativeToSelection();
+      const currentMax = Number(chart.getOption().xAxis?.[0]?.max) || originalLapCount;
+      recomputeSeriesRelativeToSelection(Math.min(Math.ceil(currentMax), originalLapCount));
       updateYAxisToVisible();
       syncCheckboxes(false);
     });
@@ -692,7 +701,8 @@
 
       // Build sidebar to reflect the selection state, rebase to selection, and fit axes
       buildDriverList(currentSeriesNames);
-      recomputeSeriesRelativeToSelection();
+      const currentMax = Number(chart.getOption().xAxis?.[0]?.max) || originalLapCount;
+      recomputeSeriesRelativeToSelection(Math.min(Math.ceil(currentMax), originalLapCount));
       updateYAxisToVisible();
     }
 
