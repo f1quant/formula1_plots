@@ -936,13 +936,14 @@
       let html = '<h3>Optimal pit stops</h3>';
       combinedResults.forEach((r, idx) => {
         const delta = deltas[idx];
+        const label = r.isBaseline ? `${r.label} (optimal)` : r.label;
         const stintText = r.stints
           .slice(0, -1)
           .map(([ci, s, e]) => `${e}`)
           .join(", ");
         html += `
           <div class="stints-item">
-            <span class="stints-label">${r.label}</span>
+            <span class="stints-label">${label}</span>
             <span> lap(s): ${stintText || "—"}</span>
           </div>`;
       });
@@ -992,14 +993,18 @@
             });
             data.sort((a, b) => a[0] - b[0]);
 
+            const isBaseline = r.isBaseline;
             series.push({
-                name: r.label,
+                name: isBaseline ? `${r.label} (optimal)` : r.label,
                 type: "line",
                 data,
-                showSymbol: false,                 // markers appear on hover
+                showSymbol: false,
                 symbol: "circle",
-                symbolSize: 2,
-                lineStyle: { width: 1.7, type: "dashed" },
+                symbolSize: isBaseline ? 3 : 2,
+                lineStyle: {
+                    width: isBaseline ? 2.2 : 1.7,
+                    type: isBaseline ? "solid" : "dashed"
+                },
                 emphasis: { focus: "series" }
             });
         });
@@ -1093,16 +1098,49 @@
         const freeSummary = summarizeResults(
           numLaps, compounds, fuelEffect, scProbRanges, scLength, pitLoss, freeRule
         );
+
         const freeEntries = Object.entries(freeSummary.results)
           .filter(([, info]) => Number.isFinite(info.expected_time));
 
-        if (freeEntries.length === 0) throw new Error("No valid free strategies; check inputs.");
+        if (freeEntries.length === 0) {
+          throw new Error("No valid free strategies; check inputs.");
+        }
 
-        const baselineFree = Math.min(...freeEntries.map(([, info]) => info.expected_time));
+        // Find globally optimal two-compound strategy
+        let optimalEntry = null;
+        let baselineFree = INF;
 
-        // Fixed patterns
-        const patterns = getStrategyPatterns();
+        for (const [startType, info] of freeEntries) {
+          if (info.expected_time < baselineFree) {
+            baselineFree = info.expected_time;
+            optimalEntry = { startType, info };
+          }
+        }
+
+        if (!optimalEntry || !optimalEntry.info.no_sc_stints || !optimalEntry.info.no_sc_stints.length) {
+          throw new Error("Unable to compute an optimal two-compound strategy.");
+        }
+
+        // Tyre sequence of the optimal strategy under no SC
+        const optimalStints = optimalEntry.info.no_sc_stints;
+        const optimalTyreSeq = optimalStints
+          .map(([ci]) => compounds[ci].type)
+          .join("→");
+
+        // Always include optimal two-compound strategy first
         const combinedResults = [];
+        const seenLabels = new Set();
+
+        combinedResults.push({
+          label: optimalTyreSeq,
+          expected_time: baselineFree,
+          stints: optimalStints,
+          isBaseline: true
+        });
+        seenLabels.add(optimalTyreSeq);
+
+        // Fixed patterns from user input
+        const patterns = getStrategyPatterns();
 
         for (const pattern of patterns) {
           const patternIndices = [];
@@ -1121,15 +1159,18 @@
           const entries = Object.entries(summary.results);
           if (entries.length === 0) continue;
 
-          // Under this rule, start should match pattern[0], so results has that.
           const [startType, info] = entries[0];
           if (!Number.isFinite(info.expected_time)) continue;
 
+          const label = pattern.join("→");
+          if (seenLabels.has(label)) continue; // don't duplicate optimal
+
           combinedResults.push({
-            label: `${pattern.join("→")}`,
+            label,
             expected_time: info.expected_time,
             stints: info.no_sc_stints
           });
+          seenLabels.add(label);
         }
 
         if (combinedResults.length === 0) {
