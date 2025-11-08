@@ -77,10 +77,10 @@
     // ---------------- Global app state ----------------
     const app = {
       data: {
-        byYear: new Map(),                            // Map<year, Map<round, { race, circuit, sessions: [{type, filename}] }>>
-        driverInfo: new Map(),                        // Map<key, Map<driver, meta>>
-        allNames: [],                                 // All driver codes in current dataset (sorted)
-        originalValues: new Map(),                    // Map<driver, number[]> raw values
+        byYear: new Map(),
+        driverInfo: new Map(),
+        allNames: [],
+        originalValues: new Map(),
         lapCount: 0,
         rightX: 0,
         yFallback: { min: -100, max: 1 }
@@ -88,12 +88,109 @@
       selection: {
         year: null,
         round: null,
-        sessionType: null,                            // "Race", "Sprint", etc. (raw type string)
-        driversSelected: new Set(),                   // Set<string>
+        sessionType: null,
+        driversSelected: new Set(),
         lapMin: 1,
         lapMax: 1
       }
     };
+
+    // ---------------- URL param parsing (NEW) ----------------
+    const urlState = parseInitialStateFromURL();
+
+    function parseInitialStateFromURL() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+
+        const season = (params.get('season') || '').trim() || null;
+
+        const roundRaw = (params.get('round_no') || '').trim();
+        const roundParsed = roundRaw ? parseInt(roundRaw, 10) : NaN;
+        const round_no = Number.isFinite(roundParsed) ? roundParsed : null;
+
+        const sessionRaw = (params.get('session_type') || '').trim();
+        const session_type = sessionRaw || null;
+
+        const minRaw = (params.get('min_lap') || '').trim();
+        const minParsed = minRaw ? parseInt(minRaw, 10) : NaN;
+        const min_lap = Number.isFinite(minParsed) ? minParsed : null;
+
+        const maxRaw = (params.get('max_lap') || '').trim();
+        const maxParsed = maxRaw ? parseInt(maxRaw, 10) : NaN;
+        const max_lap = Number.isFinite(maxParsed) ? maxParsed : null;
+
+        const selectedRaw = (params.get('selected_racers') || '').trim();
+        const selected_racers = selectedRaw
+          ? selectedRaw.split(',').map(s => s.trim()).filter(Boolean)
+          : null;
+
+        return { season, round_no, session_type, min_lap, max_lap, selected_racers };
+      } catch (e) {
+        return {
+          season: null,
+          round_no: null,
+          session_type: null,
+          min_lap: null,
+          max_lap: null,
+          selected_racers: null
+        };
+      }
+    }
+
+    function normalizeSessionType(t) {
+      if (!t) return '';
+      const up = t.toString().trim().toUpperCase();
+      if (up === 'R' || up === 'RACE')   return 'RACE';
+      if (up === 'S' || up === 'SPRINT') return 'SPRINT';
+      return up;
+    }
+
+    function applyUrlLapAndDrivers(url) {
+      if (!url) return;
+      const lapCount = app.data.lapCount;
+      if (!lapCount) return;
+
+      let lapMin = app.selection.lapMin || 1;
+      let lapMax = app.selection.lapMax || lapCount;
+
+      if (Number.isInteger(url.min_lap) && url.min_lap >= 1 && url.min_lap <= lapCount) {
+        lapMin = url.min_lap;
+      }
+      if (Number.isInteger(url.max_lap) && url.max_lap >= 1 && url.max_lap <= lapCount) {
+        lapMax = url.max_lap;
+      }
+      if (lapMin > lapMax) [lapMin, lapMax] = [lapMax, lapMin];
+
+      app.selection.lapMin = lapMin;
+      app.selection.lapMax = lapMax;
+
+      lapMinInput.min = 1;
+      lapMinInput.max = lapCount;
+      lapMaxInput.min = 1;
+      lapMaxInput.max = lapCount;
+      lapMinInput.value = lapMin;
+      lapMaxInput.value = lapMax;
+
+      if (Array.isArray(url.selected_racers) && url.selected_racers.length) {
+        const codeMap = new Map(app.data.allNames.map(name => [name.toUpperCase(), name]));
+        const chosen = new Set();
+        for (const raw of url.selected_racers) {
+          const key = raw.toUpperCase();
+          const canonical = codeMap.get(key);
+          if (canonical) chosen.add(canonical);
+        }
+        if (chosen.size) {
+          app.selection.driversSelected = chosen;
+        }
+      }
+
+      buildDriverList(app.data.allNames, app.selection.driversSelected);
+      make_chart({
+        selectedDrivers: app.selection.driversSelected,
+        lapMin: app.selection.lapMin,
+        lapMax: app.selection.lapMax
+      });
+    }
 
     // ---------------- CSV helpers ----------------
     function splitCSVLine(line) {
@@ -246,21 +343,15 @@
     // ---------------- Core: single entry point to (re)build chart ----------------
     function make_chart({ selectedDrivers, lapMin, lapMax }) {
       const { originalValues, lapCount } = app.data;
-      if (!lapCount) return; // data not ready
+      if (!lapCount) return;
 
-      // Sanitize lap range against dataset
       const Lmin = Math.max(1, Math.min(Number(lapMin) || 1, lapCount));
       const Lmax = Math.max(1, Math.min(Number(lapMax) || lapCount, lapCount));
       const [xmin, xmax] = Lmin <= Lmax ? [Lmin, Lmax] : [Lmax, Lmin];
 
-      // Update selection in app state - don't do this because then the state and visuals are disconnected
-      // app.selection.lapMin = xmin; app.selection.lapMax = xmax;
-
-      // If nothing selected, keep a clean canvas with baseline + saved fallback range
       const sel = Array.from(selectedDrivers || []);
-      const R = xmax;                                    // compute rel-baseline up to shown max lap
+      const R = xmax;
 
-      // Compute per-lap max among *selected* series for 1..R
       const perLapMax = new Array(R);
       for (let i = 0; i < R; i++) {
         let any = false, m = -Infinity;
@@ -271,10 +362,9 @@
         perLapMax[i] = any ? m : 0;
       }
 
-      // Build series for selected drivers only (legend hidden)
       const series = [];
       const { year, round, sessionType } = app.selection;
-      const rightX = app.data.rightX; // lapCount + 1.2
+      const rightX = app.data.rightX;
 
       let ymin = Infinity, ymax = -Infinity, found = false;
 
@@ -285,14 +375,12 @@
         for (let i = 0; i < len; i++) adjusted[i] = raw[i] - perLapMax[i];
 
         const data = adjusted.map((y, i) => [i + 1, y]);
-        // extend right for full-race finishers
         const isFull = (raw.length >= R);
         const anchorX = (R === lapCount) ? rightX : (R + 0.1);
         if (isFull && len > 0) {
           data.push({ value: [anchorX, adjusted[len - 1]], tooltip: { show: false }, emphasis: { disabled: true } });
         }
 
-        // Update visible Y range only for points inside [xmin, xmax]
         for (const pt of data) {
           const v = Array.isArray(pt) ? pt : pt.value;
           const x = v[0], y = v[1];
@@ -320,11 +408,7 @@
         });
       }
 
-      // Decide y-axis bounds
-      if (!found) {
-        // keep last fallback if nothing visible/selected
-        // no-op; use stored fallback below
-      } else {
+      if (found) {
         const span = Math.max(1e-6, ymax - ymin);
         const pad  = Math.max(0.02 * span, 0.5);
         app.data.yFallback.min = Math.floor(Math.min(ymin - pad, 0));
@@ -333,7 +417,6 @@
 
       const xMaxForAxis = (xmax === lapCount) ? (rightX + 0.1) : (xmax + 0.1);
 
-      // Baseline (y=0)
       series.push({
         name: '__baseline__',
         type: 'line',
@@ -363,7 +446,7 @@
             const v = Array.isArray(p.value) ? p.value : p.data?.value || p.data;
             const lap = Array.isArray(v) ? v[0] : v?.[0];
             const gap = Array.isArray(v) ? v[1] : v?.[1];
-            const code = p.seriesName; // driver code
+            const code = p.seriesName;
             const info = getInfoFor(app.selection.year, app.selection.round, code, app.selection.sessionType);
             if (info && info.headshotUrl) {
               const fullName = info.fullName || code;
@@ -441,14 +524,24 @@
           if (!app.data.driverInfo.has(kBase)) app.data.driverInfo.set(kBase, new Map());
           const baseMap = app.data.driverInfo.get(kBase);
           const existing = baseMap.get(drv) || {};
-          baseMap.set(drv, { color: color ?? existing.color ?? null, fullName: fullName || existing.fullName || '', teamName: teamName || existing.teamName || '', headshotUrl: headshotUrl || existing.headshotUrl || '' });
+          baseMap.set(drv, {
+            color: color ?? existing.color ?? null,
+            fullName: fullName || existing.fullName || '',
+            teamName: teamName || existing.teamName || '',
+            headshotUrl: headshotUrl || existing.headshotUrl || ''
+          });
 
           if (sess) {
             const kSess = `${kBase}|${sess}`;
             if (!app.data.driverInfo.has(kSess)) app.data.driverInfo.set(kSess, new Map());
             const sessMap = app.data.driverInfo.get(kSess);
             const ex2 = sessMap.get(drv) || {};
-            sessMap.set(drv, { color: color ?? ex2.color ?? null, fullName: fullName || ex2.fullName || '', teamName: teamName || ex2.teamName || '', headshotUrl: headshotUrl || ex2.headshotUrl || '' });
+            sessMap.set(drv, {
+              color: color ?? ex2.color ?? null,
+              fullName: fullName || ex2.fullName || '',
+              teamName: teamName || ex2.teamName || '',
+              headshotUrl: headshotUrl || ex2.headshotUrl || ''
+            });
           }
         }
       } catch (e) {
@@ -481,7 +574,6 @@
       const metaR = app.data.byYear.get(year)?.get(Number(round));
       app._titleMeta = metaR?.race || metaR?.circuit || '';
 
-      // Track selection for tooltip + colors
       app.selection.year = year;
       app.selection.round = round;
       app.selection.sessionType = type;
@@ -492,7 +584,6 @@
       });
       const parsed = parseDriverLines(csv);
 
-      // populate app data
       app.data.originalValues.clear();
       for (const row of parsed.rows) app.data.originalValues.set(row.label, row.values.slice());
       app.data.lapCount = parsed.lapCount;
@@ -502,25 +593,21 @@
         max: Math.max(  1, Math.ceil (parsed.maxY + 1))
       };
 
-      // driver ordering + UI
       const orderedNames = computeDriverOrder(parsed);
       app.data.allNames = orderedNames;
 
-      // Defaults for inputs
       lapMinInput.min = 1; lapMaxInput.min = 1;
       lapMinInput.max = app.data.lapCount; lapMaxInput.max = app.data.lapCount;
       lapMinInput.value = 1; lapMaxInput.value = app.data.lapCount;
       app.selection.lapMin = 1; app.selection.lapMax = app.data.lapCount;
 
-      // Default selection: top 5
-      const TOP_N = 5; app.selection.driversSelected = new Set(orderedNames.slice(0, TOP_N));
+      const TOP_N = 5;
+      app.selection.driversSelected = new Set(orderedNames.slice(0, TOP_N));
 
-      // Build sidebar and draw
       buildDriverList(app.data.allNames, app.selection.driversSelected);
       make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
     }
 
-    // ---------------- Manifest boot ----------------
     async function loadManifest() {
       seasonSel.disabled = gpSel.disabled = sessionSel.disabled = true;
       try {
@@ -528,23 +615,81 @@
         const objs = parseCSVToObjects(text);
         app._manifestItems = objs.filter(o => (o.filename || '').trim().length);
         buildIndex();
+
         populateSeasons();
-        if (seasonSel.options.length) {
-          seasonSel.selectedIndex = 0;
-          populateGPs(seasonSel.value);
-          if (gpSel.options.length) {
-            gpSel.selectedIndex = gpSel.options.length - 1; // latest GP
-            populateSessions(seasonSel.value, gpSel.value);
-            if (sessionSel.options.length) {
-              sessionSel.selectedIndex = 0;
-              await onSessionChange();
-            }
+        const years = Array.from(app.data.byYear.keys()).sort((a,b) => Number(b) - Number(a));
+        if (!years.length || !seasonSel.options.length) return;
+
+        // Season: URL -> latest
+        let year = years[0];
+        if (urlState.season && app.data.byYear.has(urlState.season)) {
+          year = urlState.season;
+        }
+        for (let i = 0; i < seasonSel.options.length; i++) {
+          if (seasonSel.options[i].value === year) {
+            seasonSel.selectedIndex = i;
+            break;
           }
         }
+
+        populateGPs(year);
+        const yearRounds = app.data.byYear.get(year)
+          ? Array.from(app.data.byYear.get(year).keys()).sort((a,b) => a - b)
+          : [];
+        if (!yearRounds.length || !gpSel.options.length) return;
+
+        // Round: URL -> latest in season
+        let round = yearRounds[yearRounds.length - 1];
+        if (Number.isInteger(urlState.round_no) && yearRounds.includes(urlState.round_no)) {
+          round = urlState.round_no;
+        }
+        for (let i = 0; i < gpSel.options.length; i++) {
+          if (Number(gpSel.options[i].value) === Number(round)) {
+            gpSel.selectedIndex = i;
+            break;
+          }
+        }
+
+        populateSessions(year, round);
+        if (!sessionSel.options.length) return;
+
+        // Session: URL -> first available
+        const meta = app.data.byYear.get(year)?.get(Number(round));
+        let availableTypes = [];
+        if (meta) {
+          const seen = new Set();
+          for (const s of meta.sessions) {
+            const t = (s.type || '').toString();
+            if (!seen.has(t) && s.filename) { seen.add(t); availableTypes.push(t); }
+          }
+        }
+        if (!availableTypes.length) {
+          availableTypes = Array.from(sessionSel.options).map(o => o.value);
+        }
+
+        let chosenSessionType = availableTypes[0];
+        if (urlState.session_type) {
+          const target = normalizeSessionType(urlState.session_type);
+          const matched = availableTypes.find(t => normalizeSessionType(t) === target);
+          if (matched) chosenSessionType = matched;
+        }
+
+        for (let i = 0; i < sessionSel.options.length; i++) {
+          if (sessionSel.options[i].value === chosenSessionType) {
+            sessionSel.selectedIndex = i;
+            break;
+          }
+        }
+
+        await onSessionChange();
+        applyUrlLapAndDrivers(urlState);
+
       } catch (e) {
         console.error(e);
       } finally {
-        seasonSel.disabled = false; gpSel.disabled = false; sessionSel.disabled = false;
+        seasonSel.disabled = false;
+        gpSel.disabled = false;
+        sessionSel.disabled = false;
       }
     }
 
