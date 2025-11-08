@@ -1,43 +1,786 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Site Index</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8" />
+  <title>Race Visualization</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
-    body {
-      margin: 0;
-      padding: 2rem;
-      background: #000;
-      color: #fff;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    :root { --bg:#0f1115; --fg:#e8e8e8; --muted:#8b8b8b; --panel:#1a1d24; --border:#232833; --accent:#00e0ff; }
+    body { margin:0; font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); }
+
+    .top-nav {
+      background: #0a0c14;
+      border-bottom: 1px solid var(--border);
+      padding: 0;
+      display: flex;
+      justify-content: flex-start;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
     }
-    h1 {
-      margin-bottom: 1rem;
-    }
-    ul {
-      padding: 100;
-    }
-    
-    li {
-      margin: 0.35rem 0;
-    }
-    a {
-      color: rgb(242, 159, 104);
+
+    .top-nav a {
+      color: var(--muted);
       text-decoration: none;
+      padding: 12px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.18s ease-out;
+      border-bottom: 2px solid transparent;
     }
-    a:hover,
-    a:focus {
-      text-decoration: underline;
+
+    .top-nav a:hover {
+      color: var(--fg);
+      background: rgba(0, 224, 255, 0.05);
+    }
+
+    .top-nav a.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    header { padding:10px 14px; background:var(--panel); display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--border); }
+    .title { font-weight:600; margin-right:auto; }
+    label.small { color:var(--muted); font-size:12px; }
+    select { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; min-width: 160px; }
+    .small { color:var(--muted); font-size:12px; }
+    .layout { display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px - 45px); }
+    #sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    #sidebar .section { padding:12px; border-bottom:1px solid var(--border); }
+    #driverList { padding:10px; overflow:auto; }
+    .driver { display:flex; align-items:center; gap:8px; padding:4px 2px; border-radius:6px; }
+    .driver:hover { background:#141820; }
+    #chart { width:100%; height:100%; }
+    .buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .buttons button { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; cursor:pointer; }
+    .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+    .credit { position:fixed; left:12px; bottom:10px; z-index:9999; font-size:12px; color:var(--muted); text-decoration:none; opacity:0.9; }
+    .credit:hover { text-decoration:underline; opacity:1; }
+
+    input[type="number"]{
+      background:#11141a; color:var(--fg);
+      border:1px solid #2a2f3a; padding:6px 8px;
+      border-radius:8px; width:90px;
     }
   </style>
 </head>
 <body>
-  <h1>F1 Quant pages</h1>
-  <ul>
-    <li><a href="gaps.html">Gap Visualization</a>: shows gaps between drivers in a plot.</li>
-    <li><a href="strat_calc.html">Mini Strategy Calculator</a>: calculates optimal tyre strategy</li>
-    <li><a href="stints.html">Tyre Deg Analysis</a>: statistical analysis of pace and tyre deg by compound for each circuit.</li>
-  </ul>
+  <nav class="top-nav">
+    <a href="index.html" class="active">Gaps</a>
+    <a href="strat_calc.html">Strategy Calculator</a>
+    <a href="stints.html">Stints</a>
+  </nav>
+  <header>
+    <label class="small" for="seasonSel">Season</label>
+    <select id="seasonSel" title="Season"></select>
+    <label class="small" for="gpSel">GP</label>
+    <select id="gpSel" title="Grand Prix"></select>
+    <label class="small" for="sessionSel">Session</label>
+    <select id="sessionSel" title="Session type"></select>
+    <label class="small" for="lapMin">Lap min</label>
+    <input id="lapMin" type="number" min="1" step="1" value="1" title="Min lap" />
+    <label class="small" for="lapMax">Lap max</label>
+    <input id="lapMax" type="number" min="1" step="1" value="1" title="Max lap" />
+  </header>
+
+  <div class="layout">
+    <aside id="sidebar">
+      <div class="section">
+        <div class="buttons">
+          <button id="btnAll"  type="button">Select all</button>
+          <button id="btnNone" type="button">Clear all</button>
+        </div>
+      </div>
+      <div id="driverList" aria-label="Driver list"></div>
+    </aside>
+    <main id="chart"></main>
+  </div>
+
+  <script>
+    // ---------------- Chart init + DOM refs ----------------
+    const chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
+    window.addEventListener('resize', () => chart.resize());
+
+    const seasonSel   = document.getElementById('seasonSel');
+    const gpSel       = document.getElementById('gpSel');
+    const sessionSel  = document.getElementById('sessionSel');
+    const driverList  = document.getElementById('driverList');
+    const btnAll      = document.getElementById('btnAll');
+    const btnNone     = document.getElementById('btnNone');
+    const lapMinInput = document.getElementById('lapMin');
+    const lapMaxInput = document.getElementById('lapMax');
+
+    // ---------------- Global app state ----------------
+    const app = {
+      data: {
+        byYear: new Map(),
+        driverInfo: new Map(),
+        allNames: [],
+        originalValues: new Map(),
+        lapCount: 0,
+        rightX: 0,
+        yFallback: { min: -100, max: 1 }
+      },
+      selection: {
+        year: null,
+        round: null,
+        sessionType: null,
+        driversSelected: new Set(),
+        lapMin: 1,
+        lapMax: 1
+      }
+    };
+
+    // ---------------- URL param parsing (NEW) ----------------
+    const urlState = parseInitialStateFromURL();
+
+    function parseInitialStateFromURL() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+
+        const season = (params.get('season') || '').trim() || null;
+
+        const roundRaw = (params.get('round_no') || '').trim();
+        const roundParsed = roundRaw ? parseInt(roundRaw, 10) : NaN;
+        const round_no = Number.isFinite(roundParsed) ? roundParsed : null;
+
+        const sessionRaw = (params.get('session_type') || '').trim();
+        const session_type = sessionRaw || null;
+
+        const minRaw = (params.get('min_lap') || '').trim();
+        const minParsed = minRaw ? parseInt(minRaw, 10) : NaN;
+        const min_lap = Number.isFinite(minParsed) ? minParsed : null;
+
+        const maxRaw = (params.get('max_lap') || '').trim();
+        const maxParsed = maxRaw ? parseInt(maxRaw, 10) : NaN;
+        const max_lap = Number.isFinite(maxParsed) ? maxParsed : null;
+
+        const selectedRaw = (params.get('selected_racers') || '').trim();
+        const selected_racers = selectedRaw
+          ? selectedRaw.split(',').map(s => s.trim()).filter(Boolean)
+          : null;
+
+        return { season, round_no, session_type, min_lap, max_lap, selected_racers };
+      } catch (e) {
+        return {
+          season: null,
+          round_no: null,
+          session_type: null,
+          min_lap: null,
+          max_lap: null,
+          selected_racers: null
+        };
+      }
+    }
+
+    function normalizeSessionType(t) {
+      if (!t) return '';
+      const up = t.toString().trim().toUpperCase();
+      if (up === 'R' || up === 'RACE')   return 'RACE';
+      if (up === 'S' || up === 'SPRINT') return 'SPRINT';
+      return up;
+    }
+
+    function applyUrlLapAndDrivers(url) {
+      if (!url) return;
+      const lapCount = app.data.lapCount;
+      if (!lapCount) return;
+
+      let lapMin = app.selection.lapMin || 1;
+      let lapMax = app.selection.lapMax || lapCount;
+
+      if (Number.isInteger(url.min_lap) && url.min_lap >= 1 && url.min_lap <= lapCount) {
+        lapMin = url.min_lap;
+      }
+      if (Number.isInteger(url.max_lap) && url.max_lap >= 1 && url.max_lap <= lapCount) {
+        lapMax = url.max_lap;
+      }
+      if (lapMin > lapMax) [lapMin, lapMax] = [lapMax, lapMin];
+
+      app.selection.lapMin = lapMin;
+      app.selection.lapMax = lapMax;
+
+      lapMinInput.min = 1;
+      lapMinInput.max = lapCount;
+      lapMaxInput.min = 1;
+      lapMaxInput.max = lapCount;
+      lapMinInput.value = lapMin;
+      lapMaxInput.value = lapMax;
+
+      if (Array.isArray(url.selected_racers) && url.selected_racers.length) {
+        const codeMap = new Map(app.data.allNames.map(name => [name.toUpperCase(), name]));
+        const chosen = new Set();
+        for (const raw of url.selected_racers) {
+          const key = raw.toUpperCase();
+          const canonical = codeMap.get(key);
+          if (canonical) chosen.add(canonical);
+        }
+        if (chosen.size) {
+          app.selection.driversSelected = chosen;
+        }
+      }
+
+      buildDriverList(app.data.allNames, app.selection.driversSelected);
+      make_chart({
+        selectedDrivers: app.selection.driversSelected,
+        lapMin: app.selection.lapMin,
+        lapMax: app.selection.lapMax
+      });
+    }
+
+    // ---------------- CSV helpers ----------------
+    function splitCSVLine(line) {
+      const out = []; let cur = ''; let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+          else { inQ = !inQ; }
+        } else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      out.push(cur.trim());
+      return out;
+    }
+    function parseCSVToObjects(text) {
+      const lines = text.split(/\r?\n/).filter(s => s.trim().length);
+      if (!lines.length) return [];
+      const header = splitCSVLine(lines[0]).map(h => h.toLowerCase());
+      return lines.slice(1).map(line => {
+        const cells = splitCSVLine(line);
+        const obj = {};
+        for (let i = 0; i < header.length; i++) obj[header[i]] = cells[i] ?? '';
+        return obj;
+      });
+    }
+    function parseDriverLines(csvText) {
+      const lines = csvText.split(/\r?\n/).filter(s => s.trim().length);
+      const rows = []; let lapCount = 0; const allY = [];
+      for (const line of lines) {
+        const cells = splitCSVLine(line);
+        if (!cells.length) continue;
+        const label = (cells[0] || '').trim();
+        const nums = [];
+        for (let i = 1; i < cells.length; i++) {
+          const v = parseFloat(cells[i]);
+          if (Number.isFinite(v)) nums.push(v);
+        }
+        if (!label || nums.length === 0) continue;
+        lapCount = Math.max(lapCount, nums.length);
+        allY.push(...nums);
+        rows.push({ label, values: nums });
+      }
+      const minY = allY.length ? Math.min(...allY) : -100;
+      const maxY = allY.length ? Math.max(...allY) : 1;
+      return { rows, lapCount, minY, maxY };
+    }
+
+    // ---------------- Driver info helpers ----------------
+    function getInfoFor(year, round, driver, sessionType) {
+      const baseKey = `${year}|${Number(round)}`;
+      const sessKey = `${baseKey}|${(sessionType||'').toString().toUpperCase()}`;
+      return app.data.driverInfo.get(sessKey)?.get(driver)
+          || app.data.driverInfo.get(baseKey)?.get(driver)
+          || null;
+    }
+    function getColorFor(year, round, driver, sessionType) {
+      return getInfoFor(year, round, driver, sessionType)?.color || null;
+    }
+
+    // ---------------- UI building for season/GP/session ----------------
+    function prettySession(typeRaw) {
+      const t = (typeRaw || '').toString().trim().toUpperCase();
+      if (t === 'R' || t === 'RACE')   return 'Race';
+      if (t === 'S' || t === 'SPRINT') return 'Sprint';
+      return t.charAt(0) + t.slice(1).toLowerCase();
+    }
+    function buildIndex() {
+      app.data.byYear.clear();
+      for (const o of app._manifestItems) {
+        const year = (o.year || '').trim();
+        const round = parseInt(o.round_no, 10);
+        if (!year || !Number.isFinite(round)) continue;
+        if (!app.data.byYear.has(year)) app.data.byYear.set(year, new Map());
+        const yMap = app.data.byYear.get(year);
+        if (!yMap.has(round)) yMap.set(round, { race: o.race || '', circuit: o.circuit || '', sessions: [] });
+        yMap.get(round).sessions.push({ type: o.type || '', filename: (o.filename || '').trim() });
+        if (o.race)    yMap.get(round).race = o.race;
+        if (o.circuit) yMap.get(round).circuit = o.circuit;
+      }
+    }
+    function populateSeasons() {
+      seasonSel.innerHTML = '';
+      const years = Array.from(app.data.byYear.keys()).sort((a,b) => Number(b) - Number(a));
+      for (const y of years) {
+        const opt = document.createElement('option');
+        opt.value = y; opt.textContent = y;
+        seasonSel.appendChild(opt);
+      }
+      seasonSel.disabled = years.length === 0;
+    }
+    function populateGPs(year) {
+      gpSel.innerHTML = '';
+      sessionSel.innerHTML = '';
+      if (!app.data.byYear.has(year)) { gpSel.disabled = true; sessionSel.disabled = true; return; }
+      const rounds = Array.from(app.data.byYear.get(year).keys()).sort((a,b) => a - b);
+      for (const r of rounds) {
+        const meta = app.data.byYear.get(year).get(r);
+        const label = `Round ${r}. ${meta.race || meta.circuit || 'Grand Prix'}`;
+        const opt = document.createElement('option');
+        opt.value = String(r); opt.textContent = label;
+        gpSel.appendChild(opt);
+      }
+      gpSel.disabled = rounds.length === 0;
+    }
+    function populateSessions(year, round) {
+      sessionSel.innerHTML = '';
+      const meta = app.data.byYear.get(year)?.get(Number(round));
+      if (!meta) { sessionSel.disabled = true; return; }
+      const seen = new Map();
+      for (const s of meta.sessions) {
+        const key = (s.type || '').toString();
+        if (!seen.has(key) && s.filename) seen.set(key, s.filename);
+      }
+      for (const [type, filename] of seen.entries()) {
+        const opt = document.createElement('option');
+        opt.value = type; opt.textContent = prettySession(type);
+        opt.dataset.filename = filename;
+        sessionSel.appendChild(opt);
+      }
+      sessionSel.disabled = seen.size === 0;
+    }
+
+    // ---------------- Driver list UI ----------------
+    function buildDriverList(allNames, selectedSet) {
+      driverList.innerHTML = '';
+      const { year, round, sessionType } = app.selection;
+      for (const name of allNames) {
+        const info = getInfoFor(year, round, name, sessionType);
+        const labelText = info ? `${info.fullName || name} (${name})` : name;
+        const row = document.createElement('label');
+        row.className = 'driver';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedSet.has(name);
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = ' ' + labelText;
+        const col = getColorFor(year, round, name, sessionType);
+        if (col) { nameSpan.style.color = col; try { cb.style.accentColor = col; } catch(e){} }
+        cb.addEventListener('change', () => {
+          if (cb.checked) selectedSet.add(name); else selectedSet.delete(name);
+          make_chart({ selectedDrivers: selectedSet, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+        });
+        row.appendChild(cb);
+        row.appendChild(nameSpan);
+        driverList.appendChild(row);
+      }
+    }
+
+    // ---------------- Core: single entry point to (re)build chart ----------------
+    function make_chart({ selectedDrivers, lapMin, lapMax }) {
+      const { originalValues, lapCount } = app.data;
+      if (!lapCount) return;
+
+      const Lmin = Math.max(1, Math.min(Number(lapMin) || 1, lapCount));
+      const Lmax = Math.max(1, Math.min(Number(lapMax) || lapCount, lapCount));
+      const [xmin, xmax] = Lmin <= Lmax ? [Lmin, Lmax] : [Lmax, Lmin];
+
+      const sel = Array.from(selectedDrivers || []);
+      const R = xmax;
+
+      const perLapMax = new Array(R);
+      for (let i = 0; i < R; i++) {
+        let any = false, m = -Infinity;
+        for (const name of sel) {
+          const arr = originalValues.get(name);
+          if (arr && arr.length > i) { any = true; if (arr[i] > m) m = arr[i]; }
+        }
+        perLapMax[i] = any ? m : 0;
+      }
+
+      const series = [];
+      const { year, round, sessionType } = app.selection;
+      const rightX = app.data.rightX;
+
+      let ymin = Infinity, ymax = -Infinity, found = false;
+
+      for (const name of sel) {
+        const raw = originalValues.get(name) || [];
+        const len = Math.min(raw.length, R);
+        const adjusted = new Array(len);
+        for (let i = 0; i < len; i++) adjusted[i] = raw[i] - perLapMax[i];
+
+        const data = adjusted.map((y, i) => [i + 1, y]);
+        const isFull = (raw.length >= R);
+        const anchorX = (R === lapCount) ? rightX : (R + 0.1);
+        if (isFull && len > 0) {
+          data.push({ value: [anchorX, adjusted[len - 1]], tooltip: { show: false }, emphasis: { disabled: true } });
+        }
+
+        for (const pt of data) {
+          const v = Array.isArray(pt) ? pt : pt.value;
+          const x = v[0], y = v[1];
+          if (x >= xmin && x <= Math.ceil(xmax + 0.1)) { ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); found = true; }
+        }
+
+        const col = getColorFor(year, round, name, sessionType);
+        series.push({
+          name,
+          type: 'line',
+          data,
+          step: 'end',
+          showSymbol: true,
+          symbol: 'circle',
+          symbolSize: 4,
+          itemStyle: { borderWidth: 0 },
+          color: col || undefined,
+          lineStyle: { width: 1.8, opacity: 0.95, color: col || undefined },
+          emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
+          blur: { lineStyle: { opacity: 0.5 } },
+          endLabel: { show: isFull, formatter: '{a}', position: 'right', offset: [6,0], color: col || 'inherit' },
+          progressive: 2000,
+          animation: false,
+          clip: true
+        });
+      }
+
+      if (found) {
+        const span = Math.max(1e-6, ymax - ymin);
+        const pad  = Math.max(0.02 * span, 0.5);
+        app.data.yFallback.min = Math.floor(Math.min(ymin - pad, 0));
+        app.data.yFallback.max = Math.ceil(Math.max(ymax + pad, 0.5));
+      }
+
+      const xMaxForAxis = (xmax === lapCount) ? (rightX + 0.1) : (xmax + 0.1);
+
+      series.push({
+        name: '__baseline__',
+        type: 'line',
+        data: [[1,0],[Math.max(lapCount + 1.3, xMaxForAxis),0]],
+        showSymbol: false,
+        lineStyle: { width: 1, opacity: 0.35, color: '#aaaaaa' },
+        silent: true,
+        z: -1
+      });
+
+      const titleText = `${app.selection.year} Round ${app.selection.round}. ${app._titleMeta || ''} (${prettySession(app.selection.sessionType)})`;
+
+      chart.setOption({
+        backgroundColor: 'transparent',
+        title: { text: titleText || 'Gap by Lap', left: 'center', top: 6, textStyle: { color: '#e8e8e8', fontSize: 16, fontWeight: 600 } },
+        grid: { left: 56, right: 130, top: 42, bottom: 40 },
+        tooltip: {
+          show: true,
+          trigger: 'item',
+          confine: true,
+          appendToBody: true,
+          borderColor: '#2a2f3a',
+          backgroundColor: 'rgba(26,29,36,0.96)',
+          textStyle: { color: '#e8e8e8' },
+          extraCssText: 'padding:10px 12px;border-radius:10px',
+          formatter: (p) => {
+            const v = Array.isArray(p.value) ? p.value : p.data?.value || p.data;
+            const lap = Array.isArray(v) ? v[0] : v?.[0];
+            const gap = Array.isArray(v) ? v[1] : v?.[1];
+            const code = p.seriesName;
+            const info = getInfoFor(app.selection.year, app.selection.round, code, app.selection.sessionType);
+            if (info && info.headshotUrl) {
+              const fullName = info.fullName || code;
+              const teamName = info.teamName || '';
+              const gapLine  = (typeof lap === 'number' && typeof gap === 'number')
+                ? `<div style="margin-top:4px">Lap ${lap}: ${gap.toFixed(3)} s</div>`
+                : '';
+              return `
+                <div style="display:flex;align-items:center;gap:10px;min-width:220px;">
+                  <img src="${info.headshotUrl}" alt="${fullName}" width="50" height="50" style="border-radius:50%;object-fit:cover;border:1px solid #2a2f3a;flex:0 0 auto" />
+                  <div style="line-height:1.25">
+                    <div style="font-weight:600">${fullName} <span style="color:#8b8b8b">(${code})</span></div>
+                    ${teamName ? `<div style="color:#8b8b8b;font-size:12px">${teamName}</div>` : ''}
+                    ${gapLine}
+                  </div>
+                </div>
+              `;
+            }
+            if (typeof lap === 'number' && typeof gap === 'number') {
+              return `${p.marker}<b>${code}</b><br/>Lap ${lap}: ${gap.toFixed(3)} s`;
+            }
+            return `${p.marker}<b>${code}</b>`;
+          }
+        },
+        legend: { show: false },
+        xAxis: {
+          type: 'value',
+          min: xmin,
+          max: xMaxForAxis,
+          name: 'Lap',
+          nameLocation: 'middle',
+          nameGap: 28,
+          axisLabel: { color: '#c8c8c8', formatter: v => Number.isInteger(v) ? v : '' },
+          splitLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLine: { lineStyle: { color: '#6b6f7b' } },
+        },
+        yAxis: {
+          type: 'value',
+          min: app.data.yFallback.min,
+          max: app.data.yFallback.max,
+          name: 'Gap to Driver in Front (secs)',
+          nameLocation: 'middle',
+          nameGap: 40,
+          axisLabel: { color: '#c8c8c8' },
+          splitLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLine: { lineStyle: { color: '#6b6f7b' } },
+        },
+        series
+      }, true);
+    }
+
+    // ---------------- Manifest/session loading ----------------
+    async function loadDriverInfo() {
+      try {
+        const text = await fetch('driver_info.csv', { cache: 'no-store' }).then(r => {
+          if (!r.ok) throw new Error('Failed to load driver_info.csv');
+          return r.text();
+        });
+        const rows = parseCSVToObjects(text);
+        app.data.driverInfo.clear();
+        for (const r of rows) {
+          const year = (r.year || '').trim();
+          const round = parseInt(r.round_no, 10);
+          const drv = (r.driver || '').trim();
+          const sess = (r.session_type || '').trim().toUpperCase();
+          const colRaw = (r.color || '').trim();
+          const colOk = /^#?[0-9a-f]{6}$/i.test(colRaw.replace('#',''));
+          const color = colOk ? (colRaw.startsWith('#') ? colRaw : ('#' + colRaw)) : null;
+          const teamName = (r.teamname || '').trim();
+          const fullName = (r.fullname || '').trim();
+          const headshotUrl = (r.headshoturl || '').trim();
+          if (!year || !Number.isFinite(round) || !drv) continue;
+
+          const kBase = `${year}|${round}`;
+          if (!app.data.driverInfo.has(kBase)) app.data.driverInfo.set(kBase, new Map());
+          const baseMap = app.data.driverInfo.get(kBase);
+          const existing = baseMap.get(drv) || {};
+          baseMap.set(drv, {
+            color: color ?? existing.color ?? null,
+            fullName: fullName || existing.fullName || '',
+            teamName: teamName || existing.teamName || '',
+            headshotUrl: headshotUrl || existing.headshotUrl || ''
+          });
+
+          if (sess) {
+            const kSess = `${kBase}|${sess}`;
+            if (!app.data.driverInfo.has(kSess)) app.data.driverInfo.set(kSess, new Map());
+            const sessMap = app.data.driverInfo.get(kSess);
+            const ex2 = sessMap.get(drv) || {};
+            sessMap.set(drv, {
+              color: color ?? ex2.color ?? null,
+              fullName: fullName || ex2.fullName || '',
+              teamName: teamName || ex2.teamName || '',
+              headshotUrl: headshotUrl || ex2.headshotUrl || ''
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('No driver_info.csv or failed to parse; falling back to default labels/colors.', e);
+      }
+    }
+
+    function computeDriverOrder(parsed) {
+      const { rows, lapCount } = parsed;
+      const entries = rows.map(r => {
+        const laps = r.values.length;
+        const isFull = laps === lapCount;
+        const lastGap = r.values[laps - 1];
+        return { name: r.label, isFull, laps, lastGap };
+      });
+      const finishers = entries.filter(e => e.isFull)
+        .sort((a, b) => (b.lastGap - a.lastGap) || a.name.localeCompare(b.name));
+      const dnfs = entries.filter(e => !e.isFull)
+        .sort((a, b) => (b.laps - a.laps) || (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
+      return [...finishers, ...dnfs].map(e => e.name);
+    }
+
+    async function onSessionChange() {
+      const year  = seasonSel.value;
+      const round = gpSel.value;
+      const opt   = sessionSel.options[sessionSel.selectedIndex];
+      if (!opt) return;
+      const type  = opt.value;
+      const file  = opt.dataset.filename;
+      const metaR = app.data.byYear.get(year)?.get(Number(round));
+      app._titleMeta = metaR?.race || metaR?.circuit || '';
+
+      app.selection.year = year;
+      app.selection.round = round;
+      app.selection.sessionType = type;
+
+      const csv = await fetch(file, { cache: 'no-store' }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} for ${file}`);
+        return r.text();
+      });
+      const parsed = parseDriverLines(csv);
+
+      app.data.originalValues.clear();
+      for (const row of parsed.rows) app.data.originalValues.set(row.label, row.values.slice());
+      app.data.lapCount = parsed.lapCount;
+      app.data.rightX = parsed.lapCount + 1.2;
+      app.data.yFallback = {
+        min: Math.min(-100, Math.floor(parsed.minY - 2)),
+        max: Math.max(  1, Math.ceil (parsed.maxY + 1))
+      };
+
+      const orderedNames = computeDriverOrder(parsed);
+      app.data.allNames = orderedNames;
+
+      lapMinInput.min = 1; lapMaxInput.min = 1;
+      lapMinInput.max = app.data.lapCount; lapMaxInput.max = app.data.lapCount;
+      lapMinInput.value = 1; lapMaxInput.value = app.data.lapCount;
+      app.selection.lapMin = 1; app.selection.lapMax = app.data.lapCount;
+
+      const TOP_N = 5;
+      app.selection.driversSelected = new Set(orderedNames.slice(0, TOP_N));
+
+      buildDriverList(app.data.allNames, app.selection.driversSelected);
+      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+    }
+
+    async function loadManifest() {
+      seasonSel.disabled = gpSel.disabled = sessionSel.disabled = true;
+      try {
+        const text = await fetch('driver_lines_filenames.csv', { cache: 'no-store' }).then(r => r.text());
+        const objs = parseCSVToObjects(text);
+        app._manifestItems = objs.filter(o => (o.filename || '').trim().length);
+        buildIndex();
+
+        populateSeasons();
+        const years = Array.from(app.data.byYear.keys()).sort((a,b) => Number(b) - Number(a));
+        if (!years.length || !seasonSel.options.length) return;
+
+        // Season: URL -> latest
+        let year = years[0];
+        if (urlState.season && app.data.byYear.has(urlState.season)) {
+          year = urlState.season;
+        }
+        for (let i = 0; i < seasonSel.options.length; i++) {
+          if (seasonSel.options[i].value === year) {
+            seasonSel.selectedIndex = i;
+            break;
+          }
+        }
+
+        populateGPs(year);
+        const yearRounds = app.data.byYear.get(year)
+          ? Array.from(app.data.byYear.get(year).keys()).sort((a,b) => a - b)
+          : [];
+        if (!yearRounds.length || !gpSel.options.length) return;
+
+        // Round: URL -> latest in season
+        let round = yearRounds[yearRounds.length - 1];
+        if (Number.isInteger(urlState.round_no) && yearRounds.includes(urlState.round_no)) {
+          round = urlState.round_no;
+        }
+        for (let i = 0; i < gpSel.options.length; i++) {
+          if (Number(gpSel.options[i].value) === Number(round)) {
+            gpSel.selectedIndex = i;
+            break;
+          }
+        }
+
+        populateSessions(year, round);
+        if (!sessionSel.options.length) return;
+
+        // Session: URL -> first available
+        const meta = app.data.byYear.get(year)?.get(Number(round));
+        let availableTypes = [];
+        if (meta) {
+          const seen = new Set();
+          for (const s of meta.sessions) {
+            const t = (s.type || '').toString();
+            if (!seen.has(t) && s.filename) { seen.add(t); availableTypes.push(t); }
+          }
+        }
+        if (!availableTypes.length) {
+          availableTypes = Array.from(sessionSel.options).map(o => o.value);
+        }
+
+        let chosenSessionType = availableTypes[0];
+        if (urlState.session_type) {
+          const target = normalizeSessionType(urlState.session_type);
+          const matched = availableTypes.find(t => normalizeSessionType(t) === target);
+          if (matched) chosenSessionType = matched;
+        }
+
+        for (let i = 0; i < sessionSel.options.length; i++) {
+          if (sessionSel.options[i].value === chosenSessionType) {
+            sessionSel.selectedIndex = i;
+            break;
+          }
+        }
+
+        await onSessionChange();
+        applyUrlLapAndDrivers(urlState);
+
+      } catch (e) {
+        console.error(e);
+      } finally {
+        seasonSel.disabled = false;
+        gpSel.disabled = false;
+        sessionSel.disabled = false;
+      }
+    }
+
+    // ---------------- Event wiring ----------------
+    seasonSel.addEventListener('change', () => {
+      populateGPs(seasonSel.value);
+      if (gpSel.options.length) gpSel.selectedIndex = 0;
+      populateSessions(seasonSel.value, gpSel.value);
+      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
+    });
+    gpSel.addEventListener('change', () => {
+      populateSessions(seasonSel.value, gpSel.value);
+      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
+    });
+    sessionSel.addEventListener('change', onSessionChange);
+
+    lapMinInput.addEventListener('input', () => {
+      const v = parseInt(lapMinInput.value, 10);
+      app.selection.lapMin = Number.isFinite(v) ? v : app.selection.lapMin;
+      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+    });
+    lapMaxInput.addEventListener('input', () => {
+      const v = parseInt(lapMaxInput.value, 10);
+      app.selection.lapMax = Number.isFinite(v) ? v : app.selection.lapMax;
+      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+    });
+
+    btnAll.addEventListener('click', () => {
+      app.selection.driversSelected = new Set(app.data.allNames);
+      buildDriverList(app.data.allNames, app.selection.driversSelected);
+      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+    });
+    btnNone.addEventListener('click', () => {
+      app.selection.driversSelected.clear();
+      buildDriverList(app.data.allNames, app.selection.driversSelected);
+      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+    });
+
+    // ---------------- Initial placeholder + boot ----------------
+    chart.setOption({
+      backgroundColor: 'transparent',
+      title: { text: 'Loading datasets…', left: 'center', top: 'center', textStyle: { color: '#6b6f7b', fontWeight: 500 } },
+      grid: { left: 56, right: 130, top: 42, bottom: 40 },
+      xAxis: { type: 'value', min: 1, max: 10, axisLabel: { color: '#c8c8c8' } },
+      yAxis: { type: 'value', min: -100, max: 1, axisLabel: { color: '#c8c8c8' } },
+      legend: { show: false }
+    });
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadDriverInfo();
+      await loadManifest();
+    });
+  </script>
+
+  <a class="credit" href="https://docs.fastf1.dev/index.html" target="_blank" rel="noopener">Source Data: FastF1</a>
 </body>
 </html>

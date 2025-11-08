@@ -24,12 +24,47 @@
 
     body {
       margin: 0;
-      padding: 10px 20px 16px;
+      padding: 0;
       background: radial-gradient(circle at top, #111827 0, #050608 40%, #000 100%);
       color: var(--text);
       font-family: var(--font);
       line-height: 1.4;
       overflow: hidden; /* layout uses internal scrolls */
+    }
+
+    .top-nav {
+      background: #0a0c14;
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0;
+      display: flex;
+      justify-content: flex-start;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .top-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 12px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all var(--transition-fast);
+      border-bottom: 2px solid transparent;
+    }
+
+    .top-nav a:hover {
+      color: var(--text);
+      background: rgba(79, 209, 197, 0.05);
+    }
+
+    .top-nav a.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .page-wrapper {
+      padding: 10px 20px 16px;
     }
 
     h1, h2, h3 {
@@ -360,6 +395,12 @@
   </style>
 </head>
 <body>
+  <nav class="top-nav">
+    <a href="index.html">Gaps</a>
+    <a href="strat_calc.html" class="active">Strategy Calculator</a>
+    <a href="stints.html">Stints</a>
+  </nav>
+  <div class="page-wrapper">
   <h4>Mini Strategy Calculator – Calculates the optimal strategy taking into account tyre degradation, pit stop time loss, and safety car probabilities.</h4>
   <div class="layout">
     <!-- LEFT: INPUTS -->
@@ -1321,5 +1362,6 @@
       runSimulation();
     })();
   </script>
+  </div>
 </body>
 </html>
