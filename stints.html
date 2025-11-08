@@ -336,6 +336,48 @@
       gap: 8px;
     }
 
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .slider-value {
+      font-size: 11px;
+      color: var(--accent-color);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-soft);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 8px var(--accent-soft);
+    }
+
     .dropdown-container {
       position: relative;
     }
@@ -567,6 +609,13 @@
           <div class="filter-label">Min Correlation</div>
           <input type="number" id="filterMinCorr" value="0.5" min="-1" max="1" step="0.1">
         </div>
+        <div class="filter-item">
+          <div class="filter-label">Fuel Effect (s/lap)</div>
+          <div class="slider-container">
+            <input type="range" id="fuelEffectSlider" min="0" max="0.1" step="0.001" value="0.05">
+            <div class="slider-value" id="fuelEffectValue">0.050</div>
+          </div>
+        </div>
         <div class="exclude-section">
           <div class="exclude-label">Exclude:</div>
           <div class="exclude-checkboxes">
@@ -764,6 +813,14 @@
       document.getElementById("filterSafetyCar").addEventListener("change", onEventSelectionChange);
       document.getElementById("filterPitLaps").addEventListener("change", onEventSelectionChange);
       document.getElementById('filterIncludeLapped').addEventListener('change', onEventSelectionChange);
+
+      // Fuel effect slider
+      const fuelEffectSlider = document.getElementById("fuelEffectSlider");
+      const fuelEffectValue = document.getElementById("fuelEffectValue");
+      fuelEffectSlider.addEventListener("input", function() {
+        fuelEffectValue.textContent = parseFloat(this.value).toFixed(3);
+        onEventSelectionChange();
+      });
     }
 
     function applyFilters(rows) {
@@ -956,6 +1013,9 @@
     }
 
     function renderScatterPlot(filteredGroups) {
+      // Get fuel effect value
+      const fuelEffect = parseFloat(document.getElementById("fuelEffectSlider").value) || 0;
+
       // Prepare data for scatter plot
       const datasets = new Map(); // compound -> array of {x, y, label}
 
@@ -968,17 +1028,23 @@
         if (stats && stats.slope !== '-' && stats.slope !== 'error' &&
             stats.intercept !== '-' && stats.intercept !== 'error') {
 
-          const x = parseFloat(stats.intercept);
-          const y = parseFloat(stats.slope);
+          const deg = parseFloat(stats.slope);
+          const pace = parseFloat(stats.intercept);
 
-          if (!isNaN(x) && !isNaN(y)) {
+          // Apply fuel effect adjustments
+          const minTyreLife = group.minTyreLife || 0;
+          const lapsToGo = group.lapsToGo || 0;
+          const degAdj = deg + fuelEffect;
+          const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
+
+          if (!isNaN(paceAdj) && !isNaN(degAdj)) {
             if (!datasets.has(compound)) {
               datasets.set(compound, []);
             }
 
             datasets.get(compound).push({
-              x: x,
-              y: y,
+              x: paceAdj,
+              y: degAdj,
               label: `${group.lap_Driver} - ${group.event}`
             });
           }
@@ -1291,8 +1357,19 @@
           if (stats.correlation !== '-' && stats.correlation !== 'error') {
             const correlation = parseFloat(stats.correlation);
             if (!isNaN(correlation) && correlation >= minCorrValue) {
-              // Store stats with group to avoid recalculating later
+              // Calculate min_tyre_life and laps_to_go
+              const tyreLifeValues = group.rows.map(r => parseFloat(r.lap_TyreLife)).filter(v => !isNaN(v));
+              const lapNumberValues = group.rows.map(r => parseFloat(r.lap_LapNumber)).filter(v => !isNaN(v));
+              const schedLapsValue = parseInt(getUniqueValue(group.rows, 'sched_laps'));
+
+              const minTyreLife = tyreLifeValues.length > 0 ? Math.min(...tyreLifeValues) : 0;
+              const minLapNum = lapNumberValues.length > 0 ? Math.min(...lapNumberValues) : 0;
+              const lapsToGo = !isNaN(schedLapsValue) && schedLapsValue > 0 ? schedLapsValue - minLapNum : 0;
+
+              // Store stats and calculated values with group to avoid recalculating later
               group.regressionStats = stats;
+              group.minTyreLife = minTyreLife;
+              group.lapsToGo = lapsToGo;
               filteredGroups.set(key, group);
             }
           }
@@ -1315,6 +1392,8 @@
               <th>Sched Laps</th>
               <th>Compound</th>
               <th>Finish Status</th>
+              <th>Min Tyre Life</th>
+              <th>Laps to Go</th>
               <th>Deg</th>
               <th>Pace</th>
               <th>Correlation</th>
@@ -1324,13 +1403,24 @@
           <tbody>
       `;
 
+      // Get fuel effect value
+      const fuelEffect = parseFloat(document.getElementById("fuelEffectSlider").value) || 0;
+
       filteredGroups.forEach(group => {
         const schedLaps = getUniqueValue(group.rows, 'sched_laps');
         const compound = getUniqueValue(group.rows, 'lap_Compound');
         const finishStatus = getUniqueValue(group.rows, 'finish_status');
 
-        // Use cached regression stats (already calculated during filtering)
+        // Use cached regression stats and calculated values
         const regressionStats = group.regressionStats;
+        const minTyreLife = group.minTyreLife;
+        const lapsToGo = group.lapsToGo;
+
+        // Apply fuel effect adjustments
+        const deg = parseFloat(regressionStats.slope);
+        const pace = parseFloat(regressionStats.intercept);
+        const degAdj = deg + fuelEffect;
+        const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
 
         html += `
           <tr>
@@ -1342,8 +1432,10 @@
             <td${schedLaps === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(schedLaps)}</td>
             <td${compound === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(compound)}</td>
             <td${finishStatus === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(finishStatus)}</td>
-            <td>${regressionStats.slope}</td>
-            <td>${regressionStats.intercept}</td>
+            <td>${minTyreLife.toFixed(0)}</td>
+            <td>${lapsToGo.toFixed(0)}</td>
+            <td>${degAdj.toFixed(4)}</td>
+            <td>${paceAdj.toFixed(4)}</td>
             <td>${regressionStats.correlation}</td>
             <td>${regressionStats.rmse}</td>
           </tr>
