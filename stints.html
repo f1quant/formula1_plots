@@ -35,7 +35,7 @@
 
     .container {
       width: 100%;
-      max-width: 900px;
+      max-width: 1400px;
       background: linear-gradient(to bottom right, #050816ee, #020308f0);
       border-radius: 24px;
       padding: 24px 20px 20px;
@@ -315,6 +315,27 @@
       cursor: pointer;
     }
 
+    .exclude-section {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .exclude-label {
+      font-size: 10px;
+      color: var(--muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .exclude-checkboxes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
     .dropdown-container {
       position: relative;
     }
@@ -415,6 +436,60 @@
       font-weight: 600;
     }
 
+    .chart-container {
+      margin-top: 20px;
+      padding: 20px;
+      background: rgba(0, 224, 255, 0.03);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+    }
+
+    .chart-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    #scatterChart {
+      max-height: 500px;
+    }
+
+    .equations-section {
+      margin-top: 12px;
+      padding: 12px 16px;
+      background: rgba(0, 224, 255, 0.05);
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 253, 0.15);
+    }
+
+    .equations-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .equations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 8px;
+    }
+
+    .equation-item {
+      font-size: 11px;
+      color: var(--text-color);
+      font-family: 'Courier New', monospace;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      border-left: 3px solid;
+    }
+
     @media (max-width: 640px) {
       .container {
         padding: 18px 14px 14px;
@@ -485,29 +560,43 @@
           <input type="number" id="filterMinDist" value="10" min="0" step="0.1">
         </div>
         <div class="filter-item">
-          <div class="checkbox-group">
-            <input type="checkbox" id="filterIncludeLapped" checked>
-            <label for="filterIncludeLapped">Exclude Lapped</label>
-          </div>
+          <div class="filter-label">Min Rows Per Stint</div>
+          <input type="number" id="filterMinRows" value="7" min="1">
         </div>
         <div class="filter-item">
-          <div class="checkbox-group">
-            <input type="checkbox" id="filterRainfall" checked>
-            <label for="filterRainfall">Exclude Rainfall</label>
+          <div class="filter-label">Min Correlation</div>
+          <input type="number" id="filterMinCorr" value="0.5" min="-1" max="1" step="0.1">
+        </div>
+        <div class="exclude-section">
+          <div class="exclude-label">Exclude:</div>
+          <div class="exclude-checkboxes">
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterIncludeLapped" checked>
+              <label for="filterIncludeLapped">Lapped</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterRainfall" checked>
+              <label for="filterRainfall">Rainfall</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterSafetyCar" checked>
+              <label for="filterSafetyCar">Safety Car</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterPitLaps" checked>
+              <label for="filterPitLaps">Pit Laps</label>
+            </div>
           </div>
         </div>
-        <div class="filter-item">
-          <div class="checkbox-group">
-            <input type="checkbox" id="filterSafetyCar" checked>
-            <label for="filterSafetyCar">Exclude Safety Car</label>
-          </div>
-        </div>
-        <div class="filter-item">
-          <div class="checkbox-group">
-            <input type="checkbox" id="filterPitLaps" checked>
-            <label for="filterPitLaps">Exclude Pit Laps</label>
-          </div>
-        </div>
+      </div>
+    </div>
+
+    <div id="chartContainer" class="chart-container" style="display: none;">
+      <div class="chart-title">Tire Degradation Analysis: Deg vs Pace</div>
+      <canvas id="scatterChart"></canvas>
+      <div id="equationsSection" class="equations-section" style="display: none;">
+        <div class="equations-title">Best Fit Equations (Deg = m × Pace + b)</div>
+        <div id="equationsGrid" class="equations-grid"></div>
       </div>
     </div>
 
@@ -517,6 +606,12 @@
   <!-- Papa Parse from CDN -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
+  <!-- Simple Statistics for linear regression -->
+  <script src="https://unpkg.com/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
+
+  <!-- Chart.js for scatter plot -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
   <script>
     const circuitSelect = document.getElementById("circuitSelect");
     const eventsList = document.getElementById("eventsList");
@@ -524,10 +619,15 @@
     const metaInfo = document.getElementById("metaInfo");
     const resultValue = document.getElementById("resultValue");
     const groupsTableContainer = document.getElementById("groupsTableContainer");
+    const chartContainer = document.getElementById("chartContainer");
+    const scatterChartCanvas = document.getElementById("scatterChart");
+    const equationsSection = document.getElementById("equationsSection");
+    const equationsGrid = document.getElementById("equationsGrid");
 
     let allRows = [];
     let eventsByKey = new Map(); // key -> {year, round_no, meeting_name, circuit_name}
     let tyreChoices = new Map(); // key (year||round_no) -> {hard, medium, soft}
+    let scatterChart = null; // Chart.js instance
 
     init();
 
@@ -658,6 +758,8 @@
       document.getElementById("filterMinLap").addEventListener("input", onEventSelectionChange);
       document.getElementById("filterEndLaps").addEventListener("input", onEventSelectionChange);
       document.getElementById("filterMinDist").addEventListener("input", onEventSelectionChange);
+      document.getElementById("filterMinRows").addEventListener("input", onEventSelectionChange);
+      document.getElementById("filterMinCorr").addEventListener("input", onEventSelectionChange);
       document.getElementById("filterRainfall").addEventListener("change", onEventSelectionChange);
       document.getElementById("filterSafetyCar").addEventListener("change", onEventSelectionChange);
       document.getElementById("filterPitLaps").addEventListener("change", onEventSelectionChange);
@@ -838,15 +940,321 @@
       displayGroupsTable(filteredRows);
     }
 
+    function getF1TireColor(compound) {
+      const compoundLower = String(compound || "").trim().toLowerCase();
+
+      // F1 tire colors
+      const colorMap = {
+        'soft': '#FF0000',      // Red
+        'medium': '#FFF200',    // Yellow
+        'hard': '#FFFFFF',      // White
+        'intermediate': '#00FF00', // Green
+        'wet': '#0000FF'        // Blue
+      };
+
+      return colorMap[compoundLower] || '#999999'; // Default gray for unknown
+    }
+
+    function renderScatterPlot(filteredGroups) {
+      // Prepare data for scatter plot
+      const datasets = new Map(); // compound -> array of {x, y, label}
+
+      filteredGroups.forEach(group => {
+        const compound = getUniqueValue(group.rows, 'lap_Compound');
+        // Use cached regression stats
+        const stats = group.regressionStats;
+
+        // Only include points with valid regression stats
+        if (stats && stats.slope !== '-' && stats.slope !== 'error' &&
+            stats.intercept !== '-' && stats.intercept !== 'error') {
+
+          const x = parseFloat(stats.intercept);
+          const y = parseFloat(stats.slope);
+
+          if (!isNaN(x) && !isNaN(y)) {
+            if (!datasets.has(compound)) {
+              datasets.set(compound, []);
+            }
+
+            datasets.get(compound).push({
+              x: x,
+              y: y,
+              label: `${group.lap_Driver} - ${group.event}`
+            });
+          }
+        }
+      });
+
+      // Store regression equations for display
+      const regressionEquations = new Map();
+
+      // Convert to Chart.js format
+      const chartDatasets = [];
+      datasets.forEach((points, compound) => {
+        const color = getF1TireColor(compound);
+        // Add black border for white tires to make them visible on dark background
+        const borderColor = compound.toLowerCase() === 'hard' ? '#000000' : color;
+
+        // Add scatter points
+        chartDatasets.push({
+          label: compound,
+          data: points,
+          backgroundColor: color,
+          borderColor: borderColor,
+          borderWidth: 2,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+          type: 'scatter'
+        });
+
+        // Calculate regression line for this compound (deg vs pace)
+        // Extract x (pace) and y (deg) values
+        const xValues = points.map(p => p.x);
+        const yValues = points.map(p => p.y);
+
+        if (points.length >= 2) {
+          try {
+            // Create data array for simple-statistics
+            const regressionData = points.map(p => [p.x, p.y]);
+            const regression = ss.linearRegression(regressionData);
+
+            // Calculate R² for this regression
+            const correlation = ss.sampleCorrelation(xValues, yValues);
+            const rSquared = correlation * correlation;
+
+            // Store equation for display
+            regressionEquations.set(compound, {
+              slope: regression.m,
+              intercept: regression.b,
+              rSquared: rSquared,
+              n: points.length,
+              color: color
+            });
+
+            // Calculate min and max x values for the line
+            const minX = Math.min(...xValues);
+            const maxX = Math.max(...xValues);
+
+            // Create two points for the regression line
+            const lineData = [
+              { x: minX, y: regression.m * minX + regression.b },
+              { x: maxX, y: regression.m * maxX + regression.b }
+            ];
+
+            // Add regression line dataset
+            // For hard (white) tires, use black color for visibility
+            const lineBorderColor = compound.toLowerCase() === 'hard' ? '#FFFFFF' : color;
+
+            chartDatasets.push({
+              label: `${compound} trend`,
+              data: lineData,
+              borderColor: lineBorderColor,
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false,
+              type: 'line',
+              showLine: true
+            });
+          } catch (error) {
+            console.error(`Error calculating regression for ${compound}:`, error);
+          }
+        }
+      });
+
+      // Destroy existing chart if it exists
+      if (scatterChart) {
+        scatterChart.destroy();
+      }
+
+      // Show chart container if we have data
+      if (chartDatasets.length > 0) {
+        chartContainer.style.display = 'block';
+
+        // Create new chart (using mixed type to support both scatter and line)
+        scatterChart = new Chart(scatterChartCanvas, {
+          type: 'scatter',
+          data: {
+            datasets: chartDatasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                  color: '#f5f5f5',
+                  font: {
+                    size: 11
+                  },
+                  usePointStyle: true,
+                  filter: function(item, chart) {
+                    // Hide trend line datasets from legend
+                    return !item.text.includes('trend');
+                  }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const point = context.raw;
+                    return [
+                      point.label,
+                      `Pace: ${point.x.toFixed(4)}`,
+                      `Deg: ${point.y.toFixed(4)}`
+                    ];
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Pace',
+                  color: '#00e0ff',
+                  font: {
+                    size: 12,
+                    weight: 600
+                  }
+                },
+                ticks: {
+                  color: '#9ca3af'
+                },
+                grid: {
+                  color: 'rgba(148, 163, 253, 0.1)'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Deg',
+                  color: '#00e0ff',
+                  font: {
+                    size: 12,
+                    weight: 600
+                  }
+                },
+                ticks: {
+                  color: '#9ca3af'
+                },
+                grid: {
+                  color: 'rgba(148, 163, 253, 0.1)'
+                }
+              }
+            }
+          }
+        });
+
+        // Display regression equations
+        if (regressionEquations.size > 0) {
+          equationsSection.style.display = 'block';
+          equationsGrid.innerHTML = '';
+
+          regressionEquations.forEach((eq, compound) => {
+            const equationDiv = document.createElement('div');
+            equationDiv.className = 'equation-item';
+            equationDiv.style.borderLeftColor = eq.color;
+
+            const slopeStr = eq.slope >= 0 ? `+${eq.slope.toFixed(4)}` : eq.slope.toFixed(4);
+            const interceptStr = eq.intercept >= 0 ? `+${eq.intercept.toFixed(4)}` : eq.intercept.toFixed(4);
+
+            equationDiv.innerHTML = `
+              <strong>${compound}:</strong> Deg = ${slopeStr} × Pace ${interceptStr}
+              (R² = ${eq.rSquared.toFixed(3)}, n = ${eq.n})
+            `;
+
+            equationsGrid.appendChild(equationDiv);
+          });
+        } else {
+          equationsSection.style.display = 'none';
+        }
+      } else {
+        chartContainer.style.display = 'none';
+        equationsSection.style.display = 'none';
+      }
+    }
+
+    function calculateRegressionStats(rows) {
+      // Extract lap_TyreLife (X) and lap_LapTime (Y) data
+      const data = [];
+
+      rows.forEach(r => {
+        const tyreLife = parseFloat(r.lap_TyreLife);
+        const lapTime = parseFloat(r.lap_LapTime);
+
+        // Only include valid numeric values
+        if (!isNaN(tyreLife) && !isNaN(lapTime) && lapTime > 0) {
+          data.push([tyreLife, lapTime]);
+        }
+      });
+
+      // Need at least 2 points for regression
+      if (data.length < 2) {
+        return {
+          slope: '-',
+          intercept: '-',
+          correlation: '-',
+          rmse: '-'
+        };
+      }
+
+      try {
+        // Calculate linear regression using simple-statistics
+        const regression = ss.linearRegression(data);
+        const slope = regression.m;
+        const intercept = regression.b;
+
+        // Calculate correlation
+        const xValues = data.map(d => d[0]);
+        const yValues = data.map(d => d[1]);
+        const correlation = ss.sampleCorrelation(xValues, yValues);
+
+        // Calculate RMSE
+        let sumSquaredErrors = 0;
+        data.forEach(([x, y]) => {
+          const predicted = slope * x + intercept;
+          const error = y - predicted;
+          sumSquaredErrors += error * error;
+        });
+        const rmse = Math.sqrt(sumSquaredErrors / data.length);
+
+        // Format with fixed decimals
+        return {
+          slope: slope.toFixed(4),
+          intercept: intercept.toFixed(4),
+          correlation: correlation.toFixed(4),
+          rmse: rmse.toFixed(4)
+        };
+      } catch (error) {
+        console.error('Error calculating regression:', error);
+        return {
+          slope: 'error',
+          intercept: 'error',
+          correlation: 'error',
+          rmse: 'error'
+        };
+      }
+    }
+
     function displayGroupsTable(rows) {
       if (!rows.length) {
         groupsTableContainer.innerHTML = "";
+        chartContainer.style.display = 'none';
+        equationsSection.style.display = 'none';
+        if (scatterChart) {
+          scatterChart.destroy();
+          scatterChart = null;
+        }
         return;
       }
 
       // Group by year, round_no, meeting_name, lap_Driver, session_type, lap_Stint
       const groups = new Map();
-      
+
       rows.forEach(r => {
         const year = String(r.year || "").trim();
         const round = String(r.round_no || "").trim();
@@ -855,7 +1263,7 @@
         const session = String(r.session_type || "").trim();
         const stint = String(r.lap_Stint || "").trim();
         const key = `${year}||${round}||${meeting}||${driver}||${session}||${stint}`;
-        
+
         if (!groups.has(key)) {
           groups.set(key, {
             event: `${year} - ${round}. ${meeting}`,
@@ -868,6 +1276,32 @@
         groups.get(key).rows.push(r);
       });
 
+      // Apply minimum rows filter
+      const minRows = parseInt(document.getElementById("filterMinRows").value) || 7;
+      const minCorr = parseFloat(document.getElementById("filterMinCorr").value);
+      const minCorrValue = isNaN(minCorr) ? 0.5 : minCorr;
+
+      const filteredGroups = new Map();
+      groups.forEach((group, key) => {
+        if (group.rows.length >= minRows) {
+          // Calculate regression stats to check correlation
+          const stats = calculateRegressionStats(group.rows);
+
+          // Apply correlation filter
+          if (stats.correlation !== '-' && stats.correlation !== 'error') {
+            const correlation = parseFloat(stats.correlation);
+            if (!isNaN(correlation) && correlation >= minCorrValue) {
+              // Store stats with group to avoid recalculating later
+              group.regressionStats = stats;
+              filteredGroups.set(key, group);
+            }
+          }
+        }
+      });
+
+      // Render scatter plot
+      renderScatterPlot(filteredGroups);
+
       // Build table
       let html = `
         <table class="groups-table">
@@ -877,19 +1311,26 @@
               <th>Driver</th>
               <th>Session Type</th>
               <th>Stint</th>
-              <th>Row Count</th>
+              <th>Lap Count</th>
               <th>Sched Laps</th>
               <th>Compound</th>
               <th>Finish Status</th>
+              <th>Deg</th>
+              <th>Pace</th>
+              <th>Correlation</th>
+              <th>RMSE</th>
             </tr>
           </thead>
           <tbody>
       `;
 
-      groups.forEach(group => {
+      filteredGroups.forEach(group => {
         const schedLaps = getUniqueValue(group.rows, 'sched_laps');
         const compound = getUniqueValue(group.rows, 'lap_Compound');
         const finishStatus = getUniqueValue(group.rows, 'finish_status');
+
+        // Use cached regression stats (already calculated during filtering)
+        const regressionStats = group.regressionStats;
 
         html += `
           <tr>
@@ -901,6 +1342,10 @@
             <td${schedLaps === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(schedLaps)}</td>
             <td${compound === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(compound)}</td>
             <td${finishStatus === 'error' ? ' class="error-cell"' : ''}>${escapeHtml(finishStatus)}</td>
+            <td>${regressionStats.slope}</td>
+            <td>${regressionStats.intercept}</td>
+            <td>${regressionStats.correlation}</td>
+            <td>${regressionStats.rmse}</td>
           </tr>
         `;
       });
