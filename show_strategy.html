@@ -353,6 +353,7 @@
 
   <!-- Papa Parse from CDN -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="common.js"></script>
 
   <script>
     const seasonSelect = document.getElementById("seasonSelect");
@@ -375,7 +376,7 @@
     }
 
     function loadCSV() {
-      Papa.parse("all_df.csv?t=" + Date.now(), {
+      Papa.parse(DataCache.getCSVUrl("all_df.csv"), {
         download: true,
         header: true,
         skipEmptyLines: true,

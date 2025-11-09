@@ -5,6 +5,7 @@
   <title>Race Visualization v2</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="common.js"></script>
   <style>
     :root { --bg:#0f1115; --fg:#e8e8e8; --muted:#8b8b8b; --panel:#1a1d24; --border:#232833; --accent:#00e0ff; }
     body { margin:0; font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); }
@@ -219,7 +220,7 @@
     }
 
     function loadDriverInfo() {
-      Papa.parse("driver_info.csv?t=" + Date.now(), {
+      Papa.parse(DataCache.getCSVUrl("driver_info.csv"), {
         download: true,
         header: true,
         skipEmptyLines: true,
@@ -285,7 +286,7 @@
     }
 
     function loadCSV() {
-      Papa.parse("all_df.csv?t=" + Date.now(), {
+      Papa.parse(DataCache.getCSVUrl("all_df.csv"), {
         download: true,
         header: true,
         skipEmptyLines: true,

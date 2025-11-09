@@ -749,6 +749,7 @@
 
   <!-- ECharts for charts -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="common.js"></script>
 
   <script>
     const circuitSelect = document.getElementById("circuitSelect");
@@ -790,7 +791,7 @@
 
     function init() {
       // Load tyre_choices.csv first
-      Papa.parse("tyre_choices.csv?t=" + Date.now(), {
+      Papa.parse(DataCache.getCSVUrl("tyre_choices.csv"), {
         download: true,
         header: true,
         skipEmptyLines: true,
@@ -821,7 +822,7 @@
     }
 
     function loadMainCSV() {
-      Papa.parse("all_df.csv?t=" + Date.now(), {
+      Papa.parse(DataCache.getCSVUrl("all_df.csv"), {
         download: true,
         header: true,
         skipEmptyLines: true,
