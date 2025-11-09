@@ -273,6 +273,189 @@ const UIHelpers = {
   }
 };
 
+// Driver info management
+const DriverInfo = {
+  // Storage for driver info: key: "year|round|session" -> Map(driver -> {fullName, color, teamName, headshotUrl})
+  _driverInfoBySession: new Map(),
+  _loaded: false,
+  _loading: false,
+  _callbacks: [],
+
+  // Load driver info CSV
+  load(callback) {
+    // If already loaded, call callback immediately
+    if (this._loaded) {
+      if (callback) callback();
+      return;
+    }
+
+    // If currently loading, queue callback
+    if (this._loading) {
+      if (callback) this._callbacks.push(callback);
+      return;
+    }
+
+    // Start loading
+    this._loading = true;
+    if (callback) this._callbacks.push(callback);
+
+    Papa.parse(DataCache.getCSVUrl("driver_info.csv"), {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      complete: (results) => {
+        if (results.data) {
+          this._driverInfoBySession.clear();
+
+          results.data.forEach(row => {
+            const year = String(row.year || "").trim();
+            const round = parseInt(row.round_no, 10);
+            const driver = String(row.driver || "").trim();
+            const session = String(row.session_type || "").trim().toUpperCase();
+            const colorRaw = String(row.color || "").trim();
+            const colorOk = /^#?[0-9a-f]{6}$/i.test(colorRaw.replace('#',''));
+            const color = colorOk ? (colorRaw.startsWith('#') ? colorRaw : ('#' + colorRaw)) : null;
+            const teamName = String(row.TeamName || "").trim();
+            const fullName = String(row.FullName || "").trim();
+            const headshotUrl = String(row.HeadshotUrl || "").trim();
+
+            if (!year || !Number.isFinite(round) || !driver) return;
+
+            // Store by base key (year|round)
+            const kBase = `${year}|${round}`;
+            if (!this._driverInfoBySession.has(kBase)) {
+              this._driverInfoBySession.set(kBase, new Map());
+            }
+            const baseMap = this._driverInfoBySession.get(kBase);
+            const existing = baseMap.get(driver) || {};
+            baseMap.set(driver, {
+              color: color ?? existing.color ?? null,
+              fullName: fullName || existing.fullName || '',
+              teamName: teamName || existing.teamName || '',
+              headshotUrl: headshotUrl || existing.headshotUrl || ''
+            });
+
+            // Also store by session-specific key (year|round|session)
+            if (session) {
+              const kSess = `${kBase}|${session}`;
+              if (!this._driverInfoBySession.has(kSess)) {
+                this._driverInfoBySession.set(kSess, new Map());
+              }
+              const sessMap = this._driverInfoBySession.get(kSess);
+              const ex2 = sessMap.get(driver) || {};
+              sessMap.set(driver, {
+                color: color ?? ex2.color ?? null,
+                fullName: fullName || ex2.fullName || '',
+                teamName: teamName || ex2.teamName || '',
+                headshotUrl: headshotUrl || ex2.headshotUrl || ''
+              });
+            }
+          });
+        }
+
+        this._loaded = true;
+        this._loading = false;
+
+        // Call all queued callbacks
+        this._callbacks.forEach(cb => cb());
+        this._callbacks = [];
+      },
+      error: (err) => {
+        console.error("Error loading driver_info.csv:", err);
+        this._loaded = true;
+        this._loading = false;
+
+        // Call all queued callbacks even on error
+        this._callbacks.forEach(cb => cb());
+        this._callbacks = [];
+      }
+    });
+  },
+
+  // Get driver info for a specific session
+  // Returns { fullName, color, teamName, headshotUrl }
+  getDriverInfo(driver, year, round, sessionType) {
+    if (!this._loaded) {
+      console.warn("DriverInfo.getDriverInfo called before data was loaded");
+      return { fullName: driver, color: '#888888', teamName: '', headshotUrl: '' };
+    }
+
+    const sessionUpper = String(sessionType || "").trim().toUpperCase();
+
+    // Try session-specific key first
+    const kSess = `${year}|${round}|${sessionUpper}`;
+    if (this._driverInfoBySession.has(kSess)) {
+      const sessMap = this._driverInfoBySession.get(kSess);
+      if (sessMap.has(driver)) {
+        const info = sessMap.get(driver);
+        return {
+          fullName: info.fullName || driver,
+          color: info.color || '#888888',
+          teamName: info.teamName || '',
+          headshotUrl: info.headshotUrl || ''
+        };
+      }
+    }
+
+    // Fall back to base key (year|round)
+    const kBase = `${year}|${round}`;
+    if (this._driverInfoBySession.has(kBase)) {
+      const baseMap = this._driverInfoBySession.get(kBase);
+      if (baseMap.has(driver)) {
+        const info = baseMap.get(driver);
+        return {
+          fullName: info.fullName || driver,
+          color: info.color || '#888888',
+          teamName: info.teamName || '',
+          headshotUrl: info.headshotUrl || ''
+        };
+      }
+    }
+
+    // Final fallback
+    return { fullName: driver, color: '#888888', teamName: '', headshotUrl: '' };
+  },
+
+  // Get driver colors for a specific session as a Map(driver -> color)
+  getDriverColors(year, round, sessionType) {
+    const colorMap = new Map();
+
+    if (!this._loaded) {
+      console.warn("DriverInfo.getDriverColors called before data was loaded");
+      return colorMap;
+    }
+
+    const sessionUpper = String(sessionType || "").trim().toUpperCase();
+
+    // Try session-specific key first
+    const kSess = `${year}|${round}|${sessionUpper}`;
+    if (this._driverInfoBySession.has(kSess)) {
+      const sessMap = this._driverInfoBySession.get(kSess);
+      sessMap.forEach((info, driver) => {
+        if (info.color) {
+          colorMap.set(driver, info.color);
+        }
+      });
+      return colorMap;
+    }
+
+    // Fall back to base key (year|round)
+    const kBase = `${year}|${round}`;
+    if (this._driverInfoBySession.has(kBase)) {
+      const baseMap = this._driverInfoBySession.get(kBase);
+      baseMap.forEach((info, driver) => {
+        if (info.color) {
+          colorMap.set(driver, info.color);
+        }
+      });
+    }
+
+    return colorMap;
+  }
+};
+
 // Export for use in other scripts
 window.DataCache = DataCache;
 window.UIHelpers = UIHelpers;
+window.DriverInfo = DriverInfo;

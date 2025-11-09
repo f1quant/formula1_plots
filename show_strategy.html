@@ -368,52 +368,11 @@
 
     let allRows = [];
     let sessionsByKey = new Map();
-    let driverInfoRows = [];
 
     init();
 
     function init() {
-      loadDriverInfo();
-    }
-
-    function loadDriverInfo() {
-      Papa.parse(DataCache.getCSVUrl("driver_info.csv"), {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: false,
-        complete: function (results) {
-          if (results.errors && results.errors.length) {
-            console.warn("Papa Parse errors loading driver_info:", results.errors);
-          }
-
-          driverInfoRows = results.data || [];
-          console.log(`Loaded ${driverInfoRows.length} driver info rows`);
-          loadCSV();
-        },
-        error: function (err) {
-          console.error("Error loading driver_info.csv:", err);
-          loadCSV(); // Continue even if driver colors fail
-        }
-      });
-    }
-
-    function getDriverColorsForSession(year, round, sessionType) {
-      const colorMap = new Map();
-
-      driverInfoRows.forEach(row => {
-        const rowYear = String(row.year || "").trim();
-        const rowRound = String(row.round_no || "").trim();
-        const rowSession = String(row.session_type || "").trim();
-        const driver = String(row.driver || "").trim();
-        const color = String(row.color || "").trim();
-
-        if (rowYear === year && rowRound === round && rowSession === sessionType && driver && color) {
-          colorMap.set(driver, color);
-        }
-      });
-
-      return colorMap;
+      DriverInfo.load(loadCSV);
     }
 
     function loadCSV() {
@@ -549,7 +508,7 @@
 
     function renderStrategyChart(rows, year, round, sessionType) {
       // Get driver colors for this specific session
-      const driverColors = getDriverColorsForSession(year, round, sessionType);
+      const driverColors = DriverInfo.getDriverColors(year, round, sessionType);
 
       // Group by driver
       const driverData = new Map();

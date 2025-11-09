@@ -146,12 +146,11 @@
     let driverLines = {}; // {driver: {laps: [lap#], gaps: [gap in seconds]}}
     let selectedDrivers = new Set();
     let myChart = null;
-    let driverInfoBySession = new Map(); // key: "year|round|session" -> Map(driver -> {fullName, color, teamName})
 
     init();
 
     function init() {
-      loadDriverInfo();
+      DriverInfo.load(loadCSV);
       setupEventListeners();
     }
 
@@ -183,106 +182,7 @@
       }
 
       const [round] = selectedGP.split('||');
-      const sessionUpper = selectedSession.toUpperCase();
-
-      // Try session-specific key first
-      const kSess = `${selectedSeason}|${round}|${sessionUpper}`;
-      if (driverInfoBySession.has(kSess)) {
-        const sessMap = driverInfoBySession.get(kSess);
-        if (sessMap.has(driver)) {
-          const info = sessMap.get(driver);
-          return {
-            fullName: info.fullName || driver,
-            color: info.color || '#888888',
-            teamName: info.teamName || '',
-            headshotUrl: info.headshotUrl || ''
-          };
-        }
-      }
-
-      // Fall back to base key (year|round)
-      const kBase = `${selectedSeason}|${round}`;
-      if (driverInfoBySession.has(kBase)) {
-        const baseMap = driverInfoBySession.get(kBase);
-        if (baseMap.has(driver)) {
-          const info = baseMap.get(driver);
-          return {
-            fullName: info.fullName || driver,
-            color: info.color || '#888888',
-            teamName: info.teamName || '',
-            headshotUrl: info.headshotUrl || ''
-          };
-        }
-      }
-
-      // Final fallback
-      return { fullName: driver, color: '#888888', teamName: '', headshotUrl: '' };
-    }
-
-    function loadDriverInfo() {
-      Papa.parse(DataCache.getCSVUrl("driver_info.csv"), {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: false,
-        complete: function (results) {
-          if (results.data) {
-            driverInfoBySession.clear();
-
-            results.data.forEach(row => {
-              const year = String(row.year || "").trim();
-              const round = parseInt(row.round_no, 10);
-              const driver = String(row.driver || "").trim();
-              const session = String(row.session_type || "").trim().toUpperCase();
-              const colorRaw = String(row.color || "").trim();
-              const colorOk = /^#?[0-9a-f]{6}$/i.test(colorRaw.replace('#',''));
-              const color = colorOk ? (colorRaw.startsWith('#') ? colorRaw : ('#' + colorRaw)) : null;
-              const teamName = String(row.TeamName || "").trim();
-              const fullName = String(row.FullName || "").trim();
-              const headshotUrl = String(row.HeadshotUrl || "").trim();
-
-              if (!year || !Number.isFinite(round) || !driver) return;
-
-              // Store by base key (year|round)
-              const kBase = `${year}|${round}`;
-              if (!driverInfoBySession.has(kBase)) {
-                driverInfoBySession.set(kBase, new Map());
-              }
-              const baseMap = driverInfoBySession.get(kBase);
-              const existing = baseMap.get(driver) || {};
-              baseMap.set(driver, {
-                color: color ?? existing.color ?? null,
-                fullName: fullName || existing.fullName || '',
-                teamName: teamName || existing.teamName || '',
-                headshotUrl: headshotUrl || existing.headshotUrl || ''
-              });
-
-              // Also store by session-specific key (year|round|session)
-              if (session) {
-                const kSess = `${kBase}|${session}`;
-                if (!driverInfoBySession.has(kSess)) {
-                  driverInfoBySession.set(kSess, new Map());
-                }
-                const sessMap = driverInfoBySession.get(kSess);
-                const ex2 = sessMap.get(driver) || {};
-                sessMap.set(driver, {
-                  color: color ?? ex2.color ?? null,
-                  fullName: fullName || ex2.fullName || '',
-                  teamName: teamName || ex2.teamName || '',
-                  headshotUrl: headshotUrl || ex2.headshotUrl || ''
-                });
-              }
-            });
-          }
-          // After driver info is loaded, load CSV
-          loadCSV();
-        },
-        error: function (err) {
-          console.error("Error loading driver_info.csv:", err);
-          // Continue anyway
-          loadCSV();
-        }
-      });
+      return DriverInfo.getDriverInfo(driver, selectedSeason, round, selectedSession);
     }
 
     function loadCSV() {
