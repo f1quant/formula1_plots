@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Race Visualization</title>
+  <title>Race Visualization v2</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
@@ -44,6 +44,7 @@
     .title { font-weight:600; margin-right:auto; }
     label.small { color:var(--muted); font-size:12px; }
     select { background:#11141a; color:var(--fg); border:1px solid #2a2f3a; padding:6px 8px; border-radius:8px; min-width: 160px; }
+    select:disabled { opacity: 0.5; cursor: not-allowed; }
     .small { color:var(--muted); font-size:12px; }
     .layout { display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px - 45px); }
     #sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; }
@@ -63,6 +64,21 @@
       border:1px solid #2a2f3a; padding:6px 8px;
       border-radius:8px; width:90px;
     }
+
+    .status-message {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: auto;
+    }
+
+    .debug-info {
+      padding: 20px;
+      color: var(--fg);
+      font-size: 14px;
+    }
+
+    input[type="checkbox"] { cursor:pointer; }
+    .driver label { cursor:pointer; user-select:none; }
   </style>
 </head>
 <body>
@@ -74,15 +90,22 @@
   </nav>
   <header>
     <label class="small" for="seasonSel">Season</label>
-    <select id="seasonSel" title="Season"></select>
+    <select id="seasonSel" title="Season">
+      <option value=""></option>
+    </select>
     <label class="small" for="gpSel">GP</label>
-    <select id="gpSel" title="Grand Prix"></select>
+    <select id="gpSel" title="Grand Prix" disabled>
+      <option value=""></option>
+    </select>
     <label class="small" for="sessionSel">Session</label>
-    <select id="sessionSel" title="Session type"></select>
+    <select id="sessionSel" title="Session type" disabled>
+      <option value=""></option>
+    </select>
     <label class="small" for="lapMin">Lap min</label>
     <input id="lapMin" type="number" min="1" step="1" value="1" title="Min lap" />
     <label class="small" for="lapMax">Lap max</label>
     <input id="lapMax" type="number" min="1" step="1" value="1" title="Max lap" />
+    <span class="status-message" id="statusMessage">Loading...</span>
   </header>
 
   <div class="layout">
@@ -95,382 +118,633 @@
       </div>
       <div id="driverList" aria-label="Driver list"></div>
     </aside>
-    <main id="chart"></main>
+    <main id="chart">
+      <div class="debug-info" id="debugInfo">
+        Waiting for data...
+      </div>
+    </main>
   </div>
 
+  <!-- Papa Parse from CDN -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
   <script>
-    // ---------------- Chart init + DOM refs ----------------
-    const chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
-    window.addEventListener('resize', () => chart.resize());
+    const seasonSel = document.getElementById("seasonSel");
+    const gpSel = document.getElementById("gpSel");
+    const sessionSel = document.getElementById("sessionSel");
+    const lapMin = document.getElementById("lapMin");
+    const lapMax = document.getElementById("lapMax");
+    const statusMessage = document.getElementById("statusMessage");
+    const debugInfo = document.getElementById("debugInfo");
+    const driverList = document.getElementById("driverList");
+    const btnAll = document.getElementById("btnAll");
+    const btnNone = document.getElementById("btnNone");
 
-    const seasonSel   = document.getElementById('seasonSel');
-    const gpSel       = document.getElementById('gpSel');
-    const sessionSel  = document.getElementById('sessionSel');
-    const driverList  = document.getElementById('driverList');
-    const btnAll      = document.getElementById('btnAll');
-    const btnNone     = document.getElementById('btnNone');
-    const lapMinInput = document.getElementById('lapMin');
-    const lapMaxInput = document.getElementById('lapMax');
+    let allRows = [];
+    let sessionsByKey = new Map();
+    let driverLines = {}; // {driver: {laps: [lap#], gaps: [gap in seconds]}}
+    let selectedDrivers = new Set();
+    let myChart = null;
+    let driverInfoBySession = new Map(); // key: "year|round|session" -> Map(driver -> {fullName, color, teamName})
 
-    // ---------------- Global app state ----------------
-    const app = {
-      data: {
-        byYear: new Map(),
-        driverInfo: new Map(),
-        allNames: [],
-        originalValues: new Map(),
-        lapCount: 0,
-        rightX: 0,
-        yFallback: { min: -100, max: 1 }
-      },
-      selection: {
-        year: null,
-        round: null,
-        sessionType: null,
-        driversSelected: new Set(),
-        lapMin: 1,
-        lapMax: 1
-      }
-    };
+    init();
 
-    // ---------------- URL param parsing (NEW) ----------------
-    const urlState = parseInitialStateFromURL();
-
-    function parseInitialStateFromURL() {
-      try {
-        const params = new URLSearchParams(window.location.search);
-
-        const season = (params.get('season') || '').trim() || null;
-
-        const roundRaw = (params.get('round_no') || '').trim();
-        const roundParsed = roundRaw ? parseInt(roundRaw, 10) : NaN;
-        const round_no = Number.isFinite(roundParsed) ? roundParsed : null;
-
-        const sessionRaw = (params.get('session_type') || '').trim();
-        const session_type = sessionRaw || null;
-
-        const minRaw = (params.get('min_lap') || '').trim();
-        const minParsed = minRaw ? parseInt(minRaw, 10) : NaN;
-        const min_lap = Number.isFinite(minParsed) ? minParsed : null;
-
-        const maxRaw = (params.get('max_lap') || '').trim();
-        const maxParsed = maxRaw ? parseInt(maxRaw, 10) : NaN;
-        const max_lap = Number.isFinite(maxParsed) ? maxParsed : null;
-
-        const selectedRaw = (params.get('selected_racers') || '').trim();
-        const selected_racers = selectedRaw
-          ? selectedRaw.split(',').map(s => s.trim()).filter(Boolean)
-          : null;
-
-        return { season, round_no, session_type, min_lap, max_lap, selected_racers };
-      } catch (e) {
-        return {
-          season: null,
-          round_no: null,
-          session_type: null,
-          min_lap: null,
-          max_lap: null,
-          selected_racers: null
-        };
-      }
+    function init() {
+      loadDriverInfo();
+      setupEventListeners();
     }
 
-    function normalizeSessionType(t) {
-      if (!t) return '';
-      const up = t.toString().trim().toUpperCase();
-      if (up === 'R' || up === 'RACE')   return 'RACE';
-      if (up === 'S' || up === 'SPRINT') return 'SPRINT';
-      return up;
+    function setupEventListeners() {
+      btnAll.addEventListener("click", () => {
+        selectedDrivers = new Set(Object.keys(driverLines));
+        updateDriverCheckboxes();
+        renderChart();
+      });
+
+      btnNone.addEventListener("click", () => {
+        selectedDrivers.clear();
+        updateDriverCheckboxes();
+        renderChart();
+      });
+
+      lapMin.addEventListener("change", renderChart);
+      lapMax.addEventListener("change", renderChart);
     }
 
-    function applyUrlLapAndDrivers(url) {
-      if (!url) return;
-      const lapCount = app.data.lapCount;
-      if (!lapCount) return;
+    function getDriverInfo(driver) {
+      // Get driver info for current session
+      const selectedSeason = seasonSel.value;
+      const selectedGP = gpSel.value;
+      const selectedSession = sessionSel.value;
 
-      let lapMin = app.selection.lapMin || 1;
-      let lapMax = app.selection.lapMax || lapCount;
-
-      if (Number.isInteger(url.min_lap) && url.min_lap >= 1 && url.min_lap <= lapCount) {
-        lapMin = url.min_lap;
+      if (!selectedSeason || !selectedGP || !selectedSession) {
+        return { fullName: driver, color: '#888888', teamName: '', headshotUrl: '' };
       }
-      if (Number.isInteger(url.max_lap) && url.max_lap >= 1 && url.max_lap <= lapCount) {
-        lapMax = url.max_lap;
-      }
-      if (lapMin > lapMax) [lapMin, lapMax] = [lapMax, lapMin];
 
-      app.selection.lapMin = lapMin;
-      app.selection.lapMax = lapMax;
+      const [round] = selectedGP.split('||');
+      const sessionUpper = selectedSession.toUpperCase();
 
-      lapMinInput.min = 1;
-      lapMinInput.max = lapCount;
-      lapMaxInput.min = 1;
-      lapMaxInput.max = lapCount;
-      lapMinInput.value = lapMin;
-      lapMaxInput.value = lapMax;
-
-      if (Array.isArray(url.selected_racers) && url.selected_racers.length) {
-        const codeMap = new Map(app.data.allNames.map(name => [name.toUpperCase(), name]));
-        const chosen = new Set();
-        for (const raw of url.selected_racers) {
-          const key = raw.toUpperCase();
-          const canonical = codeMap.get(key);
-          if (canonical) chosen.add(canonical);
-        }
-        if (chosen.size) {
-          app.selection.driversSelected = chosen;
+      // Try session-specific key first
+      const kSess = `${selectedSeason}|${round}|${sessionUpper}`;
+      if (driverInfoBySession.has(kSess)) {
+        const sessMap = driverInfoBySession.get(kSess);
+        if (sessMap.has(driver)) {
+          const info = sessMap.get(driver);
+          return {
+            fullName: info.fullName || driver,
+            color: info.color || '#888888',
+            teamName: info.teamName || '',
+            headshotUrl: info.headshotUrl || ''
+          };
         }
       }
 
-      buildDriverList(app.data.allNames, app.selection.driversSelected);
-      make_chart({
-        selectedDrivers: app.selection.driversSelected,
-        lapMin: app.selection.lapMin,
-        lapMax: app.selection.lapMax
+      // Fall back to base key (year|round)
+      const kBase = `${selectedSeason}|${round}`;
+      if (driverInfoBySession.has(kBase)) {
+        const baseMap = driverInfoBySession.get(kBase);
+        if (baseMap.has(driver)) {
+          const info = baseMap.get(driver);
+          return {
+            fullName: info.fullName || driver,
+            color: info.color || '#888888',
+            teamName: info.teamName || '',
+            headshotUrl: info.headshotUrl || ''
+          };
+        }
+      }
+
+      // Final fallback
+      return { fullName: driver, color: '#888888', teamName: '', headshotUrl: '' };
+    }
+
+    function loadDriverInfo() {
+      Papa.parse("driver_info.csv?t=" + Date.now(), {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: function (results) {
+          if (results.data) {
+            driverInfoBySession.clear();
+
+            results.data.forEach(row => {
+              const year = String(row.year || "").trim();
+              const round = parseInt(row.round_no, 10);
+              const driver = String(row.driver || "").trim();
+              const session = String(row.session_type || "").trim().toUpperCase();
+              const colorRaw = String(row.color || "").trim();
+              const colorOk = /^#?[0-9a-f]{6}$/i.test(colorRaw.replace('#',''));
+              const color = colorOk ? (colorRaw.startsWith('#') ? colorRaw : ('#' + colorRaw)) : null;
+              const teamName = String(row.TeamName || "").trim();
+              const fullName = String(row.FullName || "").trim();
+              const headshotUrl = String(row.HeadshotUrl || "").trim();
+
+              if (!year || !Number.isFinite(round) || !driver) return;
+
+              // Store by base key (year|round)
+              const kBase = `${year}|${round}`;
+              if (!driverInfoBySession.has(kBase)) {
+                driverInfoBySession.set(kBase, new Map());
+              }
+              const baseMap = driverInfoBySession.get(kBase);
+              const existing = baseMap.get(driver) || {};
+              baseMap.set(driver, {
+                color: color ?? existing.color ?? null,
+                fullName: fullName || existing.fullName || '',
+                teamName: teamName || existing.teamName || '',
+                headshotUrl: headshotUrl || existing.headshotUrl || ''
+              });
+
+              // Also store by session-specific key (year|round|session)
+              if (session) {
+                const kSess = `${kBase}|${session}`;
+                if (!driverInfoBySession.has(kSess)) {
+                  driverInfoBySession.set(kSess, new Map());
+                }
+                const sessMap = driverInfoBySession.get(kSess);
+                const ex2 = sessMap.get(driver) || {};
+                sessMap.set(driver, {
+                  color: color ?? ex2.color ?? null,
+                  fullName: fullName || ex2.fullName || '',
+                  teamName: teamName || ex2.teamName || '',
+                  headshotUrl: headshotUrl || ex2.headshotUrl || ''
+                });
+              }
+            });
+          }
+          // After driver info is loaded, load CSV
+          loadCSV();
+        },
+        error: function (err) {
+          console.error("Error loading driver_info.csv:", err);
+          // Continue anyway
+          loadCSV();
+        }
       });
     }
 
-    // ---------------- CSV helpers ----------------
-    function splitCSVLine(line) {
-      const out = []; let cur = ''; let inQ = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"') {
-          if (inQ && line[i+1] === '"') { cur += '"'; i++; }
-          else { inQ = !inQ; }
-        } else if (ch === ',' && !inQ) { out.push(cur.trim()); cur = ''; }
-        else { cur += ch; }
-      }
-      out.push(cur.trim());
-      return out;
+    function loadCSV() {
+      Papa.parse("all_df.csv?t=" + Date.now(), {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: function (results) {
+          if (results.errors && results.errors.length) {
+            console.warn("Papa Parse errors:", results.errors);
+          }
+
+          allRows = (results.data || []).filter(row =>
+            row.year !== undefined &&
+            row.round_no !== undefined &&
+            row.meeting_name !== undefined &&
+            row.session_type !== undefined &&
+            String(row.year || "").trim() !== "2018"
+          );
+
+          if (!allRows.length) {
+            statusMessage.textContent = "No usable rows found";
+            return;
+          }
+
+          indexSessions(allRows);
+          buildSeasonDropdown();
+          statusMessage.textContent = `${allRows.length} laps loaded`;
+        },
+        error: function (err) {
+          console.error("Papa Parse error:", err);
+          statusMessage.textContent = "Error loading CSV";
+        }
+      });
+
+      seasonSel.addEventListener("change", onSeasonChange);
+      gpSel.addEventListener("change", onGPChange);
+      sessionSel.addEventListener("change", onSessionChange);
     }
-    function parseCSVToObjects(text) {
-      const lines = text.split(/\r?\n/).filter(s => s.trim().length);
-      if (!lines.length) return [];
-      const header = splitCSVLine(lines[0]).map(h => h.toLowerCase());
-      return lines.slice(1).map(line => {
-        const cells = splitCSVLine(line);
-        const obj = {};
-        for (let i = 0; i < header.length; i++) obj[header[i]] = cells[i] ?? '';
-        return obj;
+
+    function indexSessions(rows) {
+      sessionsByKey.clear();
+
+      rows.forEach(r => {
+        const year = String(r.year || "").trim();
+        const round = String(r.round_no || "").trim();
+        const meeting = String(r.meeting_name || "").trim();
+        const session = String(r.session_type || "").trim();
+
+        if (!year || !round || !meeting || !session) return;
+
+        const key = `${year}||${round}||${meeting}||${session}`;
+        if (!sessionsByKey.has(key)) {
+          sessionsByKey.set(key, {
+            year,
+            round_no: round,
+            meeting_name: meeting,
+            session_type: session
+          });
+        }
       });
     }
-    function parseDriverLines(csvText) {
-      const lines = csvText.split(/\r?\n/).filter(s => s.trim().length);
-      const rows = []; let lapCount = 0; const allY = [];
-      for (const line of lines) {
-        const cells = splitCSVLine(line);
-        if (!cells.length) continue;
-        const label = (cells[0] || '').trim();
-        const nums = [];
-        for (let i = 1; i < cells.length; i++) {
-          const v = parseFloat(cells[i]);
-          if (Number.isFinite(v)) nums.push(v);
-        }
-        if (!label || nums.length === 0) continue;
-        lapCount = Math.max(lapCount, nums.length);
-        allY.push(...nums);
-        rows.push({ label, values: nums });
-      }
-      const minY = allY.length ? Math.min(...allY) : -100;
-      const maxY = allY.length ? Math.max(...allY) : 1;
-      return { rows, lapCount, minY, maxY };
-    }
 
-    // ---------------- Driver info helpers ----------------
-    function getInfoFor(year, round, driver, sessionType) {
-      const baseKey = `${year}|${Number(round)}`;
-      const sessKey = `${baseKey}|${(sessionType||'').toString().toUpperCase()}`;
-      return app.data.driverInfo.get(sessKey)?.get(driver)
-          || app.data.driverInfo.get(baseKey)?.get(driver)
-          || null;
-    }
-    function getColorFor(year, round, driver, sessionType) {
-      return getInfoFor(year, round, driver, sessionType)?.color || null;
-    }
+    function buildSeasonDropdown() {
+      const seasons = new Set();
+      sessionsByKey.forEach(val => {
+        seasons.add(val.year);
+      });
 
-    // ---------------- UI building for season/GP/session ----------------
-    function prettySession(typeRaw) {
-      const t = (typeRaw || '').toString().trim().toUpperCase();
-      if (t === 'R' || t === 'RACE')   return 'Race';
-      if (t === 'S' || t === 'SPRINT') return 'Sprint';
-      return t.charAt(0) + t.slice(1).toLowerCase();
-    }
-    function buildIndex() {
-      app.data.byYear.clear();
-      for (const o of app._manifestItems) {
-        const year = (o.year || '').trim();
-        const round = parseInt(o.round_no, 10);
-        if (!year || !Number.isFinite(round)) continue;
-        if (!app.data.byYear.has(year)) app.data.byYear.set(year, new Map());
-        const yMap = app.data.byYear.get(year);
-        if (!yMap.has(round)) yMap.set(round, { race: o.race || '', circuit: o.circuit || '', sessions: [] });
-        yMap.get(round).sessions.push({ type: o.type || '', filename: (o.filename || '').trim() });
-        if (o.race)    yMap.get(round).race = o.race;
-        if (o.circuit) yMap.get(round).circuit = o.circuit;
-      }
-    }
-    function populateSeasons() {
-      seasonSel.innerHTML = '';
-      const years = Array.from(app.data.byYear.keys()).sort((a,b) => Number(b) - Number(a));
-      for (const y of years) {
-        const opt = document.createElement('option');
-        opt.value = y; opt.textContent = y;
+      const sortedSeasons = Array.from(seasons).sort((a, b) => {
+        const ya = parseInt(a, 10) || 0;
+        const yb = parseInt(b, 10) || 0;
+        return yb - ya; // Descending order
+      });
+
+      sortedSeasons.forEach(year => {
+        const opt = document.createElement("option");
+        opt.value = year;
+        opt.textContent = year;
         seasonSel.appendChild(opt);
-      }
-      seasonSel.disabled = years.length === 0;
-    }
-    function populateGPs(year) {
-      gpSel.innerHTML = '';
-      sessionSel.innerHTML = '';
-      if (!app.data.byYear.has(year)) { gpSel.disabled = true; sessionSel.disabled = true; return; }
-      const rounds = Array.from(app.data.byYear.get(year).keys()).sort((a,b) => a - b);
-      for (const r of rounds) {
-        const meta = app.data.byYear.get(year).get(r);
-        const label = `Round ${r}. ${meta.race || meta.circuit || 'Grand Prix'}`;
-        const opt = document.createElement('option');
-        opt.value = String(r); opt.textContent = label;
-        gpSel.appendChild(opt);
-      }
-      gpSel.disabled = rounds.length === 0;
-    }
-    function populateSessions(year, round) {
-      sessionSel.innerHTML = '';
-      const meta = app.data.byYear.get(year)?.get(Number(round));
-      if (!meta) { sessionSel.disabled = true; return; }
-      const seen = new Map();
-      for (const s of meta.sessions) {
-        const key = (s.type || '').toString();
-        if (!seen.has(key) && s.filename) seen.set(key, s.filename);
-      }
-      for (const [type, filename] of seen.entries()) {
-        const opt = document.createElement('option');
-        opt.value = type; opt.textContent = prettySession(type);
-        opt.dataset.filename = filename;
-        sessionSel.appendChild(opt);
-      }
-      sessionSel.disabled = seen.size === 0;
-    }
-
-    // ---------------- Driver list UI ----------------
-    function buildDriverList(allNames, selectedSet) {
-      driverList.innerHTML = '';
-      const { year, round, sessionType } = app.selection;
-      for (const name of allNames) {
-        const info = getInfoFor(year, round, name, sessionType);
-        const labelText = info ? `${info.fullName || name} (${name})` : name;
-        const row = document.createElement('label');
-        row.className = 'driver';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = selectedSet.has(name);
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = ' ' + labelText;
-        const col = getColorFor(year, round, name, sessionType);
-        if (col) { nameSpan.style.color = col; try { cb.style.accentColor = col; } catch(e){} }
-        cb.addEventListener('change', () => {
-          if (cb.checked) selectedSet.add(name); else selectedSet.delete(name);
-          make_chart({ selectedDrivers: selectedSet, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
-        });
-        row.appendChild(cb);
-        row.appendChild(nameSpan);
-        driverList.appendChild(row);
-      }
-    }
-
-    // ---------------- Core: single entry point to (re)build chart ----------------
-    function make_chart({ selectedDrivers, lapMin, lapMax }) {
-      const { originalValues, lapCount } = app.data;
-      if (!lapCount) return;
-
-      const Lmin = Math.max(1, Math.min(Number(lapMin) || 1, lapCount));
-      const Lmax = Math.max(1, Math.min(Number(lapMax) || lapCount, lapCount));
-      const [xmin, xmax] = Lmin <= Lmax ? [Lmin, Lmax] : [Lmax, Lmin];
-
-      const sel = Array.from(selectedDrivers || []);
-      const R = xmax;
-
-      const perLapMax = new Array(R);
-      for (let i = 0; i < R; i++) {
-        let any = false, m = -Infinity;
-        for (const name of sel) {
-          const arr = originalValues.get(name);
-          if (arr && arr.length > i) { any = true; if (arr[i] > m) m = arr[i]; }
-        }
-        perLapMax[i] = any ? m : 0;
-      }
-
-      const series = [];
-      const { year, round, sessionType } = app.selection;
-      const rightX = app.data.rightX;
-
-      let ymin = Infinity, ymax = -Infinity, found = false;
-
-      for (const name of sel) {
-        const raw = originalValues.get(name) || [];
-        const len = Math.min(raw.length, R);
-        const adjusted = new Array(len);
-        for (let i = 0; i < len; i++) adjusted[i] = raw[i] - perLapMax[i];
-
-        const data = adjusted.map((y, i) => [i + 1, y]);
-        const isFull = (raw.length >= R);
-        const anchorX = (R === lapCount) ? rightX : (R + 0.1);
-        if (isFull && len > 0) {
-          data.push({ value: [anchorX, adjusted[len - 1]], tooltip: { show: false }, emphasis: { disabled: true } });
-        }
-
-        for (const pt of data) {
-          const v = Array.isArray(pt) ? pt : pt.value;
-          const x = v[0], y = v[1];
-          if (x >= xmin && x <= Math.ceil(xmax + 0.1)) { ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); found = true; }
-        }
-
-        const col = getColorFor(year, round, name, sessionType);
-        series.push({
-          name,
-          type: 'line',
-          data,
-          step: 'end',
-          showSymbol: true,
-          symbol: 'circle',
-          symbolSize: 4,
-          itemStyle: { borderWidth: 0 },
-          color: col || undefined,
-          lineStyle: { width: 1.8, opacity: 0.95, color: col || undefined },
-          emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
-          blur: { lineStyle: { opacity: 0.5 } },
-          endLabel: { show: isFull, formatter: '{a}', position: 'right', offset: [6,0], color: col || 'inherit' },
-          progressive: 2000,
-          animation: false,
-          clip: true
-        });
-      }
-
-      if (found) {
-        const span = Math.max(1e-6, ymax - ymin);
-        const pad  = Math.max(0.02 * span, 0.5);
-        app.data.yFallback.min = Math.floor(Math.min(ymin - pad, 0));
-        app.data.yFallback.max = Math.ceil(Math.max(ymax + pad, 0.5));
-      }
-
-      const xMaxForAxis = (xmax === lapCount) ? (rightX + 0.1) : (xmax + 0.1);
-
-      series.push({
-        name: '__baseline__',
-        type: 'line',
-        data: [[1,0],[Math.max(lapCount + 1.3, xMaxForAxis),0]],
-        showSymbol: false,
-        lineStyle: { width: 1, opacity: 0.35, color: '#aaaaaa' },
-        silent: true,
-        z: -1
       });
 
-      const titleText = `${app.selection.year} Round ${app.selection.round}. ${app._titleMeta || ''} (${prettySession(app.selection.sessionType)})`;
+      // Select most recent season by default
+      if (sortedSeasons.length > 0) {
+        seasonSel.value = sortedSeasons[0];
+        onSeasonChange();
+      }
+    }
 
-      chart.setOption({
+    function onSeasonChange() {
+      const selectedSeason = seasonSel.value;
+      gpSel.innerHTML = '<option value=""></option>';
+      sessionSel.innerHTML = '<option value=""></option>';
+      gpSel.disabled = true;
+      sessionSel.disabled = true;
+      debugInfo.textContent = "Select a GP";
+
+      if (!selectedSeason) return;
+
+      const gps = new Map();
+      sessionsByKey.forEach((val, key) => {
+        if (val.year === selectedSeason) {
+          const gpKey = `${val.round_no}||${val.meeting_name}`;
+          if (!gps.has(gpKey)) {
+            gps.set(gpKey, {
+              round_no: val.round_no,
+              meeting_name: val.meeting_name
+            });
+          }
+        }
+      });
+
+      const sortedGPs = Array.from(gps.values()).sort((a, b) => {
+        const ra = parseInt(a.round_no, 10) || 0;
+        const rb = parseInt(b.round_no, 10) || 0;
+        return ra - rb; // Ascending order
+      });
+
+      sortedGPs.forEach(gp => {
+        const opt = document.createElement("option");
+        opt.value = `${gp.round_no}||${gp.meeting_name}`;
+        opt.textContent = `${gp.round_no}. ${gp.meeting_name}`;
+        gpSel.appendChild(opt);
+      });
+
+      gpSel.disabled = false;
+
+      // Select last GP by default
+      if (sortedGPs.length > 0) {
+        const lastGP = sortedGPs[sortedGPs.length - 1];
+        gpSel.value = `${lastGP.round_no}||${lastGP.meeting_name}`;
+        onGPChange();
+      }
+    }
+
+    function onGPChange() {
+      const selectedSeason = seasonSel.value;
+      const selectedGP = gpSel.value;
+      sessionSel.innerHTML = '<option value=""></option>';
+      sessionSel.disabled = true;
+      debugInfo.textContent = "Select a session";
+
+      if (!selectedGP) return;
+
+      const [round, meeting] = selectedGP.split('||');
+
+      const sessions = [];
+      sessionsByKey.forEach((val, key) => {
+        if (val.year === selectedSeason && val.round_no === round && val.meeting_name === meeting) {
+          sessions.push(val.session_type);
+        }
+      });
+
+      const uniqueSessions = [...new Set(sessions)];
+      uniqueSessions.forEach(session => {
+        const opt = document.createElement("option");
+        opt.value = session;
+        opt.textContent = session;
+        sessionSel.appendChild(opt);
+      });
+
+      sessionSel.disabled = false;
+
+      // Select Race by default if available, otherwise first session
+      if (uniqueSessions.includes('Race')) {
+        sessionSel.value = 'Race';
+        onSessionChange();
+      } else if (uniqueSessions.length > 0) {
+        sessionSel.value = uniqueSessions[0];
+        onSessionChange();
+      }
+    }
+
+    function onSessionChange() {
+      const selectedSeason = seasonSel.value;
+      const selectedGP = gpSel.value;
+      const selectedSession = sessionSel.value;
+
+      if (!selectedSeason || !selectedGP || !selectedSession) {
+        debugInfo.textContent = "Select season, GP, and session";
+        return;
+      }
+
+      const [round, meeting] = selectedGP.split('||');
+
+      // Filter rows for this session
+      const sessionRows = allRows.filter(r => {
+        return String(r.year || "").trim() === selectedSeason &&
+               String(r.round_no || "").trim() === round &&
+               String(r.meeting_name || "").trim() === meeting &&
+               String(r.session_type || "").trim() === selectedSession;
+      });
+
+      if (sessionRows.length === 0) {
+        debugInfo.textContent = "No data for this session";
+        return;
+      }
+
+      // Update lap min/max based on data
+      const lapNumbers = sessionRows.map(r => parseInt(r.lap_LapNumber)).filter(n => !isNaN(n));
+      const minLapNum = Math.min(...lapNumbers);
+      const maxLapNum = Math.max(...lapNumbers);
+
+      lapMin.value = minLapNum;
+      lapMax.value = maxLapNum;
+      lapMin.min = minLapNum;
+      lapMax.max = maxLapNum;
+
+      // Clear selected drivers for new session
+      selectedDrivers.clear();
+
+      // Calculate gaps
+      calculateGaps(sessionRows);
+
+      // Build driver list
+      buildDriverList();
+
+      // Render chart
+      renderChart();
+
+      statusMessage.textContent = `${sessionRows.length} rows loaded`;
+    }
+
+    function calculateGaps(rows) {
+      // Group rows by lap number
+      const lapData = new Map(); // lap# -> array of {driver, position, time}
+
+      rows.forEach(r => {
+        const lapNum = parseInt(r.lap_LapNumber);
+        const driver = String(r.lap_Driver || "").trim();
+        const position = parseInt(r.lap_Position);
+        const lapTime = parseFloat(r.lap_Time);
+
+        if (isNaN(lapNum) || !driver || isNaN(lapTime) || isNaN(position)) return;
+
+        if (!lapData.has(lapNum)) {
+          lapData.set(lapNum, []);
+        }
+
+        lapData.get(lapNum).push({
+          driver,
+          position,
+          lapTime
+        });
+      });
+
+      // For each lap, calculate gaps
+      driverLines = {};
+
+      lapData.forEach((driversInLap, lapNum) => {
+        // Sort by position (lower is better)
+        driversInLap.sort((a, b) => a.position - b.position);
+
+        // Find minimum lap time (P1 driver)
+        const minTime = Math.min(...driversInLap.map(d => d.lapTime));
+
+        // Calculate gap for each driver (minTime - driverTime, so gaps are negative)
+        driversInLap.forEach(d => {
+          const gap = minTime - d.lapTime;
+
+          if (!driverLines[d.driver]) {
+            driverLines[d.driver] = {
+              laps: [],
+              gaps: [],
+              positions: []
+            };
+          }
+
+          driverLines[d.driver].laps.push(lapNum);
+          driverLines[d.driver].gaps.push(gap);
+          driverLines[d.driver].positions.push(d.position);
+        });
+      });
+
+      // Don't auto-select here - will be done in buildDriverList based on finishing position
+    }
+
+    function buildDriverList() {
+      driverList.innerHTML = '';
+
+      // Sort drivers by finishing position
+      const drivers = Object.keys(driverLines);
+
+      // Calculate finishing position for each driver
+      const driverFinishInfo = drivers.map(driver => {
+        const data = driverLines[driver];
+        const maxLapNum = Math.max(...data.laps);
+        const lastLapIndex = data.laps.indexOf(maxLapNum);
+        const lastPosition = data.positions[lastLapIndex];
+
+        return {
+          driver: driver,
+          maxLapNum: maxLapNum,
+          lastPosition: lastPosition
+        };
+      });
+
+      // Sort by finishing position:
+      // 1. More laps completed = better (descending)
+      // 2. If same laps, use lap_Position (lower is better)
+      driverFinishInfo.sort((a, b) => {
+        if (a.maxLapNum !== b.maxLapNum) {
+          return b.maxLapNum - a.maxLapNum; // More laps = finished higher
+        }
+        return a.lastPosition - b.lastPosition; // Lower position number = better
+      });
+
+      // Auto-select top 5 drivers if this is a new session (selectedDrivers is empty)
+      const isNewSession = selectedDrivers.size === 0;
+      if (isNewSession) {
+        selectedDrivers.clear();
+        driverFinishInfo.slice(0, 5).forEach(({ driver }) => {
+          selectedDrivers.add(driver);
+        });
+      }
+
+      // Build the list in finishing order
+      driverFinishInfo.forEach(({ driver }) => {
+        const div = document.createElement('div');
+        div.className = 'driver';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `driver-${driver}`;
+        checkbox.checked = selectedDrivers.has(driver);
+        checkbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            selectedDrivers.add(driver);
+          } else {
+            selectedDrivers.delete(driver);
+          }
+          renderChart();
+        });
+
+        const label = document.createElement('label');
+        label.htmlFor = `driver-${driver}`;
+
+        // Format: "Full Name (ABB)"
+        const info = getDriverInfo(driver);
+        const displayName = info.fullName ? `${info.fullName} (${driver})` : driver;
+        label.textContent = displayName;
+
+        // Set label color
+        label.style.color = info.color;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        driverList.appendChild(div);
+      });
+    }
+
+    function updateDriverCheckboxes() {
+      Object.keys(driverLines).forEach(driver => {
+        const checkbox = document.getElementById(`driver-${driver}`);
+        if (checkbox) {
+          checkbox.checked = selectedDrivers.has(driver);
+        }
+      });
+    }
+
+    function renderChart() {
+      if (Object.keys(driverLines).length === 0) return;
+
+      const chartContainer = document.getElementById('chart');
+
+      // Remove debug info if it exists
+      const debugDiv = document.getElementById('debugInfo');
+      if (debugDiv) {
+        debugDiv.remove();
+      }
+
+      // Initialize chart if needed
+      if (!myChart) {
+        myChart = echarts.init(chartContainer);
+      }
+
+      const minLap = parseInt(lapMin.value);
+      const maxLap = parseInt(lapMax.value);
+
+      // Calculate rightX for anchor point (similar to gaps.html)
+      const lapCount = Object.keys(driverLines).length > 0
+        ? Math.max(...Object.values(driverLines).map(d => Math.max(...d.laps)))
+        : maxLap;
+      const rightX = (maxLap === lapCount) ? (maxLap + 0.5) : (maxLap + 0.1);
+
+      // Prepare series data
+      const series = [];
+
+      selectedDrivers.forEach(driver => {
+        const data = driverLines[driver];
+        if (!data) return;
+
+        // Filter by lap range
+        const points = [];
+        let lastGap = null;
+        for (let i = 0; i < data.laps.length; i++) {
+          const lap = data.laps[i];
+          if (lap >= minLap && lap <= maxLap) {
+            points.push([lap, data.gaps[i]]);
+            lastGap = data.gaps[i];
+          }
+        }
+
+        if (points.length > 0) {
+          const info = getDriverInfo(driver);
+
+          // Check if driver completed all laps in range
+          const completedAllLaps = data.laps.some(lap => lap === maxLap);
+
+          // Add anchor point for label positioning (like gaps.html)
+          if (completedAllLaps && lastGap !== null) {
+            points.push({
+              value: [rightX, lastGap],
+              tooltip: { show: false },
+              emphasis: { disabled: true }
+            });
+          }
+
+          series.push({
+            name: driver,
+            type: 'line',
+            data: points,
+            step: 'end',
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 4,
+            lineStyle: {
+              width: 2,
+              color: info.color
+            },
+            itemStyle: {
+              color: info.color,
+              borderWidth: 0
+            },
+            emphasis: {
+              focus: 'series',
+              blurScope: 'global',
+              lineStyle: { width: 3.5 }
+            },
+            blur: {
+              lineStyle: { opacity: 0.15 }
+            },
+            endLabel: {
+              show: completedAllLaps,
+              formatter: '{a}',
+              position: 'right',
+              offset: [6, 0],
+              color: info.color
+            },
+            animation: false
+          });
+        }
+      });
+
+      const option = {
         backgroundColor: 'transparent',
-        title: { text: titleText || 'Gap by Lap', left: 'center', top: 6, textStyle: { color: '#e8e8e8', fontSize: 16, fontWeight: 600 } },
-        grid: { left: 56, right: 130, top: 42, bottom: 40 },
+        grid: {
+          left: 60,
+          right: 120,
+          top: 20,
+          bottom: 60
+        },
         tooltip: {
           show: true,
           trigger: 'item',
@@ -485,11 +759,12 @@
             const lap = Array.isArray(v) ? v[0] : v?.[0];
             const gap = Array.isArray(v) ? v[1] : v?.[1];
             const code = p.seriesName;
-            const info = getInfoFor(app.selection.year, app.selection.round, code, app.selection.sessionType);
+            const info = getDriverInfo(code);
+
             if (info && info.headshotUrl) {
               const fullName = info.fullName || code;
               const teamName = info.teamName || '';
-              const gapLine  = (typeof lap === 'number' && typeof gap === 'number')
+              const gapLine = (typeof lap === 'number' && typeof gap === 'number')
                 ? `<div style="margin-top:4px">Lap ${lap}: ${gap.toFixed(3)} s</div>`
                 : '';
               return `
@@ -503,285 +778,43 @@
                 </div>
               `;
             }
+
             if (typeof lap === 'number' && typeof gap === 'number') {
               return `${p.marker}<b>${code}</b><br/>Lap ${lap}: ${gap.toFixed(3)} s`;
             }
             return `${p.marker}<b>${code}</b>`;
           }
         },
-        legend: { show: false },
+        legend: {
+          show: false
+        },
         xAxis: {
           type: 'value',
-          min: xmin,
-          max: xMaxForAxis,
           name: 'Lap',
           nameLocation: 'middle',
-          nameGap: 28,
-          axisLabel: { color: '#c8c8c8', formatter: v => Number.isInteger(v) ? v : '' },
-          splitLine: { lineStyle: { color: '#2a2f3a' } },
-          axisLine: { lineStyle: { color: '#6b6f7b' } },
+          nameGap: 30,
+          nameTextStyle: { color: '#8b8b8b', fontSize: 12 },
+          axisLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLabel: { color: '#8b8b8b' },
+          splitLine: { lineStyle: { color: '#232833' } },
+          min: minLap,
+          max: rightX
         },
         yAxis: {
           type: 'value',
-          min: app.data.yFallback.min,
-          max: app.data.yFallback.max,
-          name: 'Gap to Driver in Front (secs)',
+          name: 'Gap (s)',
           nameLocation: 'middle',
-          nameGap: 40,
-          axisLabel: { color: '#c8c8c8' },
-          splitLine: { lineStyle: { color: '#2a2f3a' } },
-          axisLine: { lineStyle: { color: '#6b6f7b' } },
+          nameGap: 45,
+          nameTextStyle: { color: '#8b8b8b', fontSize: 12 },
+          axisLine: { lineStyle: { color: '#2a2f3a' } },
+          axisLabel: { color: '#8b8b8b' },
+          splitLine: { lineStyle: { color: '#232833' } }
         },
-        series
-      }, true);
-    }
-
-    // ---------------- Manifest/session loading ----------------
-    async function loadDriverInfo() {
-      try {
-        const text = await fetch('driver_info.csv', { cache: 'no-store' }).then(r => {
-          if (!r.ok) throw new Error('Failed to load driver_info.csv');
-          return r.text();
-        });
-        const rows = parseCSVToObjects(text);
-        app.data.driverInfo.clear();
-        for (const r of rows) {
-          const year = (r.year || '').trim();
-          const round = parseInt(r.round_no, 10);
-          const drv = (r.driver || '').trim();
-          const sess = (r.session_type || '').trim().toUpperCase();
-          const colRaw = (r.color || '').trim();
-          const colOk = /^#?[0-9a-f]{6}$/i.test(colRaw.replace('#',''));
-          const color = colOk ? (colRaw.startsWith('#') ? colRaw : ('#' + colRaw)) : null;
-          const teamName = (r.teamname || '').trim();
-          const fullName = (r.fullname || '').trim();
-          const headshotUrl = (r.headshoturl || '').trim();
-          if (!year || !Number.isFinite(round) || !drv) continue;
-
-          const kBase = `${year}|${round}`;
-          if (!app.data.driverInfo.has(kBase)) app.data.driverInfo.set(kBase, new Map());
-          const baseMap = app.data.driverInfo.get(kBase);
-          const existing = baseMap.get(drv) || {};
-          baseMap.set(drv, {
-            color: color ?? existing.color ?? null,
-            fullName: fullName || existing.fullName || '',
-            teamName: teamName || existing.teamName || '',
-            headshotUrl: headshotUrl || existing.headshotUrl || ''
-          });
-
-          if (sess) {
-            const kSess = `${kBase}|${sess}`;
-            if (!app.data.driverInfo.has(kSess)) app.data.driverInfo.set(kSess, new Map());
-            const sessMap = app.data.driverInfo.get(kSess);
-            const ex2 = sessMap.get(drv) || {};
-            sessMap.set(drv, {
-              color: color ?? ex2.color ?? null,
-              fullName: fullName || ex2.fullName || '',
-              teamName: teamName || ex2.teamName || '',
-              headshotUrl: headshotUrl || ex2.headshotUrl || ''
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('No driver_info.csv or failed to parse; falling back to default labels/colors.', e);
-      }
-    }
-
-    function computeDriverOrder(parsed) {
-      const { rows, lapCount } = parsed;
-      const entries = rows.map(r => {
-        const laps = r.values.length;
-        const isFull = laps === lapCount;
-        const lastGap = r.values[laps - 1];
-        return { name: r.label, isFull, laps, lastGap };
-      });
-      const finishers = entries.filter(e => e.isFull)
-        .sort((a, b) => (b.lastGap - a.lastGap) || a.name.localeCompare(b.name));
-      const dnfs = entries.filter(e => !e.isFull)
-        .sort((a, b) => (b.laps - a.laps) || (a.lastGap - b.lastGap) || a.name.localeCompare(b.name));
-      return [...finishers, ...dnfs].map(e => e.name);
-    }
-
-    async function onSessionChange() {
-      const year  = seasonSel.value;
-      const round = gpSel.value;
-      const opt   = sessionSel.options[sessionSel.selectedIndex];
-      if (!opt) return;
-      const type  = opt.value;
-      const file  = opt.dataset.filename;
-      const metaR = app.data.byYear.get(year)?.get(Number(round));
-      app._titleMeta = metaR?.race || metaR?.circuit || '';
-
-      app.selection.year = year;
-      app.selection.round = round;
-      app.selection.sessionType = type;
-
-      const csv = await fetch(file, { cache: 'no-store' }).then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status} for ${file}`);
-        return r.text();
-      });
-      const parsed = parseDriverLines(csv);
-
-      app.data.originalValues.clear();
-      for (const row of parsed.rows) app.data.originalValues.set(row.label, row.values.slice());
-      app.data.lapCount = parsed.lapCount;
-      app.data.rightX = parsed.lapCount + 1.2;
-      app.data.yFallback = {
-        min: Math.min(-100, Math.floor(parsed.minY - 2)),
-        max: Math.max(  1, Math.ceil (parsed.maxY + 1))
+        series: series
       };
 
-      const orderedNames = computeDriverOrder(parsed);
-      app.data.allNames = orderedNames;
-
-      lapMinInput.min = 1; lapMaxInput.min = 1;
-      lapMinInput.max = app.data.lapCount; lapMaxInput.max = app.data.lapCount;
-      lapMinInput.value = 1; lapMaxInput.value = app.data.lapCount;
-      app.selection.lapMin = 1; app.selection.lapMax = app.data.lapCount;
-
-      const TOP_N = 5;
-      app.selection.driversSelected = new Set(orderedNames.slice(0, TOP_N));
-
-      buildDriverList(app.data.allNames, app.selection.driversSelected);
-      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
+      myChart.setOption(option, true);
     }
-
-    async function loadManifest() {
-      seasonSel.disabled = gpSel.disabled = sessionSel.disabled = true;
-      try {
-        const text = await fetch('driver_lines_filenames.csv', { cache: 'no-store' }).then(r => r.text());
-        const objs = parseCSVToObjects(text);
-        app._manifestItems = objs.filter(o => (o.filename || '').trim().length);
-        buildIndex();
-
-        populateSeasons();
-        const years = Array.from(app.data.byYear.keys()).sort((a,b) => Number(b) - Number(a));
-        if (!years.length || !seasonSel.options.length) return;
-
-        // Season: URL -> latest
-        let year = years[0];
-        if (urlState.season && app.data.byYear.has(urlState.season)) {
-          year = urlState.season;
-        }
-        for (let i = 0; i < seasonSel.options.length; i++) {
-          if (seasonSel.options[i].value === year) {
-            seasonSel.selectedIndex = i;
-            break;
-          }
-        }
-
-        populateGPs(year);
-        const yearRounds = app.data.byYear.get(year)
-          ? Array.from(app.data.byYear.get(year).keys()).sort((a,b) => a - b)
-          : [];
-        if (!yearRounds.length || !gpSel.options.length) return;
-
-        // Round: URL -> latest in season
-        let round = yearRounds[yearRounds.length - 1];
-        if (Number.isInteger(urlState.round_no) && yearRounds.includes(urlState.round_no)) {
-          round = urlState.round_no;
-        }
-        for (let i = 0; i < gpSel.options.length; i++) {
-          if (Number(gpSel.options[i].value) === Number(round)) {
-            gpSel.selectedIndex = i;
-            break;
-          }
-        }
-
-        populateSessions(year, round);
-        if (!sessionSel.options.length) return;
-
-        // Session: URL -> first available
-        const meta = app.data.byYear.get(year)?.get(Number(round));
-        let availableTypes = [];
-        if (meta) {
-          const seen = new Set();
-          for (const s of meta.sessions) {
-            const t = (s.type || '').toString();
-            if (!seen.has(t) && s.filename) { seen.add(t); availableTypes.push(t); }
-          }
-        }
-        if (!availableTypes.length) {
-          availableTypes = Array.from(sessionSel.options).map(o => o.value);
-        }
-
-        let chosenSessionType = availableTypes[0];
-        if (urlState.session_type) {
-          const target = normalizeSessionType(urlState.session_type);
-          const matched = availableTypes.find(t => normalizeSessionType(t) === target);
-          if (matched) chosenSessionType = matched;
-        }
-
-        for (let i = 0; i < sessionSel.options.length; i++) {
-          if (sessionSel.options[i].value === chosenSessionType) {
-            sessionSel.selectedIndex = i;
-            break;
-          }
-        }
-
-        await onSessionChange();
-        applyUrlLapAndDrivers(urlState);
-
-      } catch (e) {
-        console.error(e);
-      } finally {
-        seasonSel.disabled = false;
-        gpSel.disabled = false;
-        sessionSel.disabled = false;
-      }
-    }
-
-    // ---------------- Event wiring ----------------
-    seasonSel.addEventListener('change', () => {
-      populateGPs(seasonSel.value);
-      if (gpSel.options.length) gpSel.selectedIndex = 0;
-      populateSessions(seasonSel.value, gpSel.value);
-      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
-    });
-    gpSel.addEventListener('change', () => {
-      populateSessions(seasonSel.value, gpSel.value);
-      if (sessionSel.options.length) { sessionSel.selectedIndex = 0; onSessionChange(); }
-    });
-    sessionSel.addEventListener('change', onSessionChange);
-
-    lapMinInput.addEventListener('input', () => {
-      const v = parseInt(lapMinInput.value, 10);
-      app.selection.lapMin = Number.isFinite(v) ? v : app.selection.lapMin;
-      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
-    });
-    lapMaxInput.addEventListener('input', () => {
-      const v = parseInt(lapMaxInput.value, 10);
-      app.selection.lapMax = Number.isFinite(v) ? v : app.selection.lapMax;
-      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
-    });
-
-    btnAll.addEventListener('click', () => {
-      app.selection.driversSelected = new Set(app.data.allNames);
-      buildDriverList(app.data.allNames, app.selection.driversSelected);
-      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
-    });
-    btnNone.addEventListener('click', () => {
-      app.selection.driversSelected.clear();
-      buildDriverList(app.data.allNames, app.selection.driversSelected);
-      make_chart({ selectedDrivers: app.selection.driversSelected, lapMin: app.selection.lapMin, lapMax: app.selection.lapMax });
-    });
-
-    // ---------------- Initial placeholder + boot ----------------
-    chart.setOption({
-      backgroundColor: 'transparent',
-      title: { text: 'Loading datasets…', left: 'center', top: 'center', textStyle: { color: '#6b6f7b', fontWeight: 500 } },
-      grid: { left: 56, right: 130, top: 42, bottom: 40 },
-      xAxis: { type: 'value', min: 1, max: 10, axisLabel: { color: '#c8c8c8' } },
-      yAxis: { type: 'value', min: -100, max: 1, axisLabel: { color: '#c8c8c8' } },
-      legend: { show: false }
-    });
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      await loadDriverInfo();
-      await loadManifest();
-    });
   </script>
-
-  <a class="credit" href="https://docs.fastf1.dev/index.html" target="_blank" rel="noopener">Source Data: FastF1</a>
 </body>
 </html>
