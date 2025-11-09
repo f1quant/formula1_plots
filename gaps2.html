@@ -663,6 +663,12 @@
       const minLap = parseInt(lapMin.value);
       const maxLap = parseInt(lapMax.value);
 
+      // Calculate rightX for anchor point (similar to gaps.html)
+      const lapCount = Object.keys(driverLines).length > 0
+        ? Math.max(...Object.values(driverLines).map(d => Math.max(...d.laps)))
+        : maxLap;
+      const rightX = (maxLap === lapCount) ? (maxLap + 0.5) : (maxLap + 0.1);
+
       // Prepare series data
       const series = [];
 
@@ -672,21 +678,36 @@
 
         // Filter by lap range
         const points = [];
+        let lastGap = null;
         for (let i = 0; i < data.laps.length; i++) {
           const lap = data.laps[i];
           if (lap >= minLap && lap <= maxLap) {
             points.push([lap, data.gaps[i]]);
+            lastGap = data.gaps[i];
           }
         }
 
         if (points.length > 0) {
           const info = getDriverInfo(driver);
 
+          // Check if driver completed all laps in range
+          const completedAllLaps = data.laps.some(lap => lap === maxLap);
+
+          // Add anchor point for label positioning (like gaps.html)
+          if (completedAllLaps && lastGap !== null) {
+            points.push({
+              value: [rightX, lastGap],
+              tooltip: { show: false },
+              emphasis: { disabled: true }
+            });
+          }
+
           series.push({
             name: driver,
             type: 'line',
             data: points,
             step: 'end',
+            showSymbol: true,
             symbol: 'circle',
             symbolSize: 4,
             lineStyle: {
@@ -694,7 +715,8 @@
               color: info.color
             },
             itemStyle: {
-              color: info.color
+              color: info.color,
+              borderWidth: 0
             },
             emphasis: {
               focus: 'series',
@@ -703,7 +725,15 @@
             },
             blur: {
               lineStyle: { opacity: 0.15 }
-            }
+            },
+            endLabel: {
+              show: completedAllLaps,
+              formatter: '{a}',
+              position: 'right',
+              offset: [6, 0],
+              color: info.color
+            },
+            animation: false
           });
         }
       });
@@ -769,11 +799,11 @@
           axisLabel: { color: '#8b8b8b' },
           splitLine: { lineStyle: { color: '#232833' } },
           min: minLap,
-          max: maxLap
+          max: rightX
         },
         yAxis: {
           type: 'value',
-          name: 'Gap to Leader (s)',
+          name: 'Gap (s)',
           nameLocation: 'middle',
           nameGap: 45,
           nameTextStyle: { color: '#8b8b8b', fontSize: 12 },
@@ -785,48 +815,6 @@
       };
 
       myChart.setOption(option, true);
-
-      // Add labels on the right side
-      addDriverLabels(series, minLap, maxLap);
-    }
-
-    function addDriverLabels(series, minLap, maxLap) {
-      // Get the positions of each driver at maxLap
-      const labelData = [];
-
-      series.forEach(s => {
-        const lastPoint = s.data[s.data.length - 1];
-        if (lastPoint && lastPoint[0] === maxLap) {
-          labelData.push({
-            name: s.name,
-            value: lastPoint[1]
-          });
-        }
-      });
-
-      // Sort by gap value
-      labelData.sort((a, b) => a.value - b.value);
-
-      // Add graphic elements for labels
-      const graphics = labelData.map((d, idx) => {
-        const info = getDriverInfo(d.name);
-        return {
-          type: 'text',
-          right: 10,
-          top: `${15 + idx * 20}px`,
-          style: {
-            text: d.name,
-            fill: info.color,
-            font: '12px system-ui',
-            textAlign: 'right'
-          },
-          z: 100
-        };
-      });
-
-      myChart.setOption({
-        graphic: graphics
-      });
     }
   </script>
 </body>
