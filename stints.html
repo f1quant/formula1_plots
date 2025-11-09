@@ -944,10 +944,10 @@
     }
 
     function applyFilters(rows) {
-      const lapsToDiscard = parseInt(document.getElementById("filterMinLap").value) || 1;
+      const lapsToDiscard = parseInt(document.getElementById("filterMinLap").value) || 0;
       const minLap = lapsToDiscard + 1;
-      const endLaps = parseInt(document.getElementById("filterEndLaps").value) || 5;
-      const minDist = parseFloat(document.getElementById("filterMinDist").value) || 10;
+      const endLaps = parseInt(document.getElementById("filterEndLaps").value) || 0;
+      const minDist = parseFloat(document.getElementById("filterMinDist").value) || 0;
       const includeRainfall = document.getElementById("filterRainfall").checked;
       const includeSafetyCar = document.getElementById("filterSafetyCar").checked;
       const includePitLaps = document.getElementById("filterPitLaps").checked;
@@ -1832,7 +1832,7 @@
       });
 
       // Apply minimum rows filter
-      const minRows = parseInt(document.getElementById("filterMinRows").value) || 7;
+      const minRows = parseInt(document.getElementById("filterMinRows").value) || 0;
       const minCorr = parseFloat(document.getElementById("filterMinCorr").value);
       const minCorrValue = isNaN(minCorr) ? 0.5 : minCorr;
 
