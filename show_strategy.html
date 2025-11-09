@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Strategy Chart</title>
+  <style>
+    :root {
+      --bg-color: #02040a;
+      --panel-color: #101320;
+      --accent-color: #00e0ff;
+      --accent-soft: #00e0ff33;
+      --text-color: #f5f5f5;
+      --muted-color: #9ca3af;
+      --border-color: #27272f;
+      --radius-lg: 16px;
+      --transition-fast: 0.18s ease-out;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, -system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      background: radial-gradient(circle at top, #050816 0, #000 55%, #000 100%);
+      color: var(--text-color);
+    }
+
+    .top-nav {
+      background: #0a0c14;
+      border-bottom: 1px solid var(--border-color);
+      padding: 0;
+      display: flex;
+      justify-content: flex-start;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .top-nav a {
+      color: var(--muted-color);
+      text-decoration: none;
+      padding: 12px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all var(--transition-fast);
+      border-bottom: 2px solid transparent;
+    }
+
+    .top-nav a:hover {
+      color: var(--text-color);
+      background: rgba(0, 224, 255, 0.05);
+    }
+
+    .top-nav a.active {
+      color: var(--accent-color);
+      border-bottom-color: var(--accent-color);
+    }
+
+    .page-content {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 8px 16px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: linear-gradient(to bottom right, #050816ee, #020308f0);
+      border-radius: 24px;
+      padding: 12px 20px 20px;
+      border: 1px solid rgba(148, 163, 253, 0.08);
+      box-shadow:
+        0 18px 60px rgba(0, 0, 0, 0.85),
+        0 0 40px rgba(0, 224, 255, 0.05);
+      backdrop-filter: blur(14px);
+    }
+
+    .header {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 0;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 150px;
+    }
+
+    .label {
+      font-size: 11px;
+      color: var(--muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+      background-color: #020308;
+      color: var(--text-color);
+      font-size: 13px;
+      outline: none;
+      appearance: none;
+      transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast),
+        background-color var(--transition-fast),
+        transform var(--transition-fast);
+      box-shadow: 0 0 0 1px transparent;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--accent-color) 50%),
+        linear-gradient(135deg, var(--accent-color) 50%, transparent 50%);
+      background-position:
+        calc(100% - 16px) 11px,
+        calc(100% - 11px) 11px;
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+    }
+
+    select:disabled {
+      cursor: not-allowed;
+      opacity: 0.35;
+      background-image: none;
+    }
+
+    select:hover:not(:disabled) {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 12px var(--accent-soft);
+      transform: translateY(-1px);
+    }
+
+    select:focus-visible {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 14px var(--accent-soft);
+    }
+
+    .status-message {
+      font-size: 11px;
+      color: var(--muted-color);
+      white-space: nowrap;
+      margin-left: auto;
+    }
+
+    .strategy-container {
+      margin-top: 20px;
+      padding: 20px;
+      background: rgba(0, 224, 255, 0.03);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+      display: none;
+    }
+
+    .strategy-container.show {
+      display: block;
+    }
+
+    .driver-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .driver-label {
+      width: 80px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-color);
+      text-align: right;
+      padding-right: 12px;
+      flex-shrink: 0;
+    }
+
+    .strategy-bar {
+      flex: 1;
+      height: 24px;
+      display: flex;
+      position: relative;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .stint-segment {
+      height: 100%;
+      position: relative;
+      border-right: 3px solid #000;
+      box-shadow: 2px 0 0 rgba(0, 0, 0, 0.8);
+    }
+
+    .stint-segment:last-child {
+      border-right: none;
+      box-shadow: none;
+    }
+
+    .missing-laps {
+      height: 100%;
+      background: repeating-linear-gradient(
+        45deg,
+        #333,
+        #333 4px,
+        #222 4px,
+        #222 8px
+      );
+      opacity: 0.5;
+    }
+
+    .lap-axis {
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .lap-axis.top {
+      margin-bottom: 8px;
+    }
+
+    .lap-axis.bottom {
+      margin-top: 16px;
+    }
+
+    .lap-axis-spacer {
+      width: 80px;
+      flex-shrink: 0;
+    }
+
+    .lap-axis-track {
+      flex: 1;
+      height: 30px;
+      position: relative;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .lap-axis.bottom .lap-axis-track {
+      border-top: 1px solid var(--border-color);
+      border-bottom: none;
+    }
+
+    .lap-axis.top .lap-axis-track {
+      border-top: none;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .lap-tick {
+      position: absolute;
+      width: 1px;
+      background: var(--muted-color);
+    }
+
+    .lap-axis.bottom .lap-tick {
+      top: 0;
+      height: 8px;
+    }
+
+    .lap-axis.top .lap-tick {
+      bottom: 0;
+      height: 8px;
+    }
+
+    .lap-label {
+      position: absolute;
+      font-size: 10px;
+      color: var(--muted-color);
+      transform: translateX(-50%);
+    }
+
+    .lap-axis.bottom .lap-label {
+      top: 10px;
+    }
+
+    .lap-axis.top .lap-label {
+      bottom: 10px;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: rgba(26, 29, 36, 0.96);
+      border: 1px solid var(--accent-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--text-color);
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    .tooltip.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="show_strategy.html" class="active">Strategy Chart</a>
+    <a href="index.html">Gaps</a>
+    <a href="stints.html">Stints</a>
+    <a href="strat_calc.html">Strategy Calculator</a>
+  </nav>
+  <div class="page-content">
+    <div class="container">
+      <div class="header">
+        <div class="field">
+          <div class="label">Season</div>
+          <select id="seasonSelect">
+            <option value="">—</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label">Grand Prix</div>
+          <select id="gpSelect" disabled>
+            <option value="">—</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label">Session</div>
+          <select id="sessionSelect" disabled>
+            <option value="">—</option>
+          </select>
+        </div>
+        <div class="status-message" id="statusMessage">Loading...</div>
+      </div>
+
+      <div id="strategyContainer" class="strategy-container">
+        <div class="lap-axis top">
+          <div class="lap-axis-spacer"></div>
+          <div class="lap-axis-track" id="lapAxisTop"></div>
+        </div>
+        <div id="strategyChart"></div>
+        <div class="lap-axis bottom">
+          <div class="lap-axis-spacer"></div>
+          <div class="lap-axis-track" id="lapAxisBottom"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tooltip" class="tooltip"></div>
+
+  <!-- Papa Parse from CDN -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    const seasonSelect = document.getElementById("seasonSelect");
+    const gpSelect = document.getElementById("gpSelect");
+    const sessionSelect = document.getElementById("sessionSelect");
+    const statusMessage = document.getElementById("statusMessage");
+    const strategyContainer = document.getElementById("strategyContainer");
+    const strategyChart = document.getElementById("strategyChart");
+    const lapAxisTop = document.getElementById("lapAxisTop");
+    const lapAxisBottom = document.getElementById("lapAxisBottom");
+    const tooltip = document.getElementById("tooltip");
+
+    let allRows = [];
+    let sessionsByKey = new Map();
+
+    init();
+
+    function init() {
+      loadCSV();
+    }
+
+    function loadCSV() {
+      Papa.parse("all_df.csv?t=" + Date.now(), {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: function (results) {
+          if (results.errors && results.errors.length) {
+            console.warn("Papa Parse errors:", results.errors);
+          }
+
+          allRows = (results.data || []).filter(row =>
+            row.year !== undefined &&
+            row.round_no !== undefined &&
+            row.meeting_name !== undefined &&
+            row.session_type !== undefined &&
+            String(row.year || "").trim() !== "2018"
+          );
+
+          if (!allRows.length) {
+            statusMessage.textContent = "No usable rows found";
+            return;
+          }
+
+          indexSessions(allRows);
+          buildSeasonDropdown();
+          statusMessage.textContent = `${allRows.length} laps loaded`;
+        },
+        error: function (err) {
+          console.error("Papa Parse error:", err);
+          statusMessage.textContent = "Error loading CSV";
+        }
+      });
+
+      seasonSelect.addEventListener("change", onSeasonChange);
+      gpSelect.addEventListener("change", onGPChange);
+      sessionSelect.addEventListener("change", onSessionChange);
+    }
+
+    function indexSessions(rows) {
+      sessionsByKey.clear();
+
+      rows.forEach(r => {
+        const year = String(r.year || "").trim();
+        const round = String(r.round_no || "").trim();
+        const meeting = String(r.meeting_name || "").trim();
+        const session = String(r.session_type || "").trim();
+
+        if (!year || !round || !meeting || !session) return;
+
+        const key = `${year}||${round}||${meeting}||${session}`;
+        if (!sessionsByKey.has(key)) {
+          sessionsByKey.set(key, {
+            year,
+            round_no: round,
+            meeting_name: meeting,
+            session_type: session
+          });
+        }
+      });
+    }
+
+    function buildSeasonDropdown() {
+      const seasons = new Set();
+      sessionsByKey.forEach(val => {
+        seasons.add(val.year);
+      });
+
+      const sortedSeasons = Array.from(seasons).sort((a, b) => {
+        const ya = parseInt(a, 10) || 0;
+        const yb = parseInt(b, 10) || 0;
+        return yb - ya; // Descending order
+      });
+
+      sortedSeasons.forEach(year => {
+        const opt = document.createElement("option");
+        opt.value = year;
+        opt.textContent = year;
+        seasonSelect.appendChild(opt);
+      });
+
+      // Select most recent season by default
+      if (sortedSeasons.length > 0) {
+        seasonSelect.value = sortedSeasons[0];
+        onSeasonChange();
+      }
+    }
+
+    function onSeasonChange() {
+      const selectedSeason = seasonSelect.value;
+      gpSelect.innerHTML = '<option value="">—</option>';
+      sessionSelect.innerHTML = '<option value="">—</option>';
+      gpSelect.disabled = true;
+      sessionSelect.disabled = true;
+      strategyContainer.classList.remove('show');
+
+      if (!selectedSeason) return;
+
+      const gps = new Map();
+      sessionsByKey.forEach((val, key) => {
+        if (val.year === selectedSeason) {
+          const gpKey = `${val.round_no}||${val.meeting_name}`;
+          if (!gps.has(gpKey)) {
+            gps.set(gpKey, {
+              round_no: val.round_no,
+              meeting_name: val.meeting_name
+            });
+          }
+        }
+      });
+
+      const sortedGPs = Array.from(gps.values()).sort((a, b) => {
+        const ra = parseInt(a.round_no, 10) || 0;
+        const rb = parseInt(b.round_no, 10) || 0;
+        return ra - rb; // Ascending order
+      });
+
+      sortedGPs.forEach(gp => {
+        const opt = document.createElement("option");
+        opt.value = `${gp.round_no}||${gp.meeting_name}`;
+        opt.textContent = `${gp.round_no}. ${gp.meeting_name}`;
+        gpSelect.appendChild(opt);
+      });
+
+      gpSelect.disabled = false;
+
+      // Select last GP (highest round number) by default
+      if (sortedGPs.length > 0) {
+        const lastGP = sortedGPs[sortedGPs.length - 1];
+        gpSelect.value = `${lastGP.round_no}||${lastGP.meeting_name}`;
+        onGPChange();
+      }
+    }
+
+    function onGPChange() {
+      const selectedSeason = seasonSelect.value;
+      const selectedGP = gpSelect.value;
+      sessionSelect.innerHTML = '<option value="">—</option>';
+      sessionSelect.disabled = true;
+      strategyContainer.classList.remove('show');
+
+      if (!selectedGP) return;
+
+      const [round, meeting] = selectedGP.split('||');
+
+      const sessions = [];
+      sessionsByKey.forEach((val, key) => {
+        if (val.year === selectedSeason && val.round_no === round && val.meeting_name === meeting) {
+          sessions.push(val.session_type);
+        }
+      });
+
+      const uniqueSessions = [...new Set(sessions)];
+      uniqueSessions.forEach(session => {
+        const opt = document.createElement("option");
+        opt.value = session;
+        opt.textContent = session;
+        sessionSelect.appendChild(opt);
+      });
+
+      sessionSelect.disabled = false;
+
+      // Select Race by default if available, otherwise first session
+      if (uniqueSessions.includes('Race')) {
+        sessionSelect.value = 'Race';
+        onSessionChange();
+      } else if (uniqueSessions.length > 0) {
+        sessionSelect.value = uniqueSessions[0];
+        onSessionChange();
+      }
+    }
+
+    function onSessionChange() {
+      const selectedSeason = seasonSelect.value;
+      const selectedGP = gpSelect.value;
+      const selectedSession = sessionSelect.value;
+
+      if (!selectedSeason || !selectedGP || !selectedSession) {
+        strategyContainer.classList.remove('show');
+        return;
+      }
+
+      const [round, meeting] = selectedGP.split('||');
+
+      // Filter rows for this session
+      const sessionRows = allRows.filter(r => {
+        return String(r.year || "").trim() === selectedSeason &&
+               String(r.round_no || "").trim() === round &&
+               String(r.meeting_name || "").trim() === meeting &&
+               String(r.session_type || "").trim() === selectedSession;
+      });
+
+      if (sessionRows.length === 0) {
+        statusMessage.textContent = "No data for this session";
+        strategyContainer.classList.remove('show');
+        return;
+      }
+
+      renderStrategyChart(sessionRows);
+      strategyContainer.classList.add('show');
+    }
+
+    function getF1TireColor(compound) {
+      const compoundLower = String(compound || "").trim().toLowerCase();
+      const colorMap = {
+        'soft': '#FF0000',
+        'medium': '#FFF200',
+        'hard': '#FFFFFF',
+        'intermediate': '#00FF00',
+        'wet': '#0000FF'
+      };
+      return colorMap[compoundLower] || '#999999';
+    }
+
+    function renderStrategyChart(rows) {
+      // Group by driver
+      const driverData = new Map();
+
+      rows.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNum = parseInt(r.lap_LapNumber);
+        const stint = parseInt(r.lap_Stint);
+        const compound = String(r.lap_Compound || "").trim();
+        const gridPos = parseInt(r.grid_position);
+        const tyreLife = parseInt(r.lap_TyreLife);
+        const position = parseInt(r.lap_Position);
+
+        if (!driver || isNaN(lapNum)) return;
+
+        if (!driverData.has(driver)) {
+          driverData.set(driver, {
+            driver: driver,
+            gridPosition: gridPos,
+            laps: new Map(),
+            stints: new Map(),
+            maxLapNum: 0,
+            lastPosition: null
+          });
+        }
+
+        const data = driverData.get(driver);
+        data.laps.set(lapNum, { compound, stint, tyreLife, position });
+
+        // Track max lap number and position on that lap
+        if (lapNum > data.maxLapNum) {
+          data.maxLapNum = lapNum;
+          data.lastPosition = position;
+        }
+
+        if (!data.stints.has(stint)) {
+          data.stints.set(stint, {
+            compound: compound,
+            startLap: lapNum,
+            endLap: lapNum,
+            startTyreLife: tyreLife
+          });
+        } else {
+          const stintData = data.stints.get(stint);
+          if (lapNum < stintData.startLap) {
+            stintData.startLap = lapNum;
+            stintData.startTyreLife = tyreLife;
+          }
+          if (lapNum > stintData.endLap) {
+            stintData.endLap = lapNum;
+          }
+        }
+      });
+
+      // Get max lap number (scheduled laps)
+      const schedLaps = parseInt(rows[0]?.sched_laps || 0);
+      const maxLap = schedLaps > 0 ? schedLaps : Math.max(...Array.from(driverData.values()).flatMap(d => Array.from(d.laps.keys())));
+
+      // Sort drivers by finishing position
+      // - First by number of laps completed (descending - more laps = better)
+      // - Then by position on their last lap (ascending - lower position number = better)
+      const sortedDrivers = Array.from(driverData.values()).sort((a, b) => {
+        // Compare number of laps completed
+        if (a.maxLapNum !== b.maxLapNum) {
+          return b.maxLapNum - a.maxLapNum; // More laps = finished higher
+        }
+
+        // Same number of laps - use position on last lap
+        const posA = isNaN(a.lastPosition) ? 999 : a.lastPosition;
+        const posB = isNaN(b.lastPosition) ? 999 : b.lastPosition;
+        return posA - posB; // Lower position number = better
+      });
+
+      // Clear chart
+      strategyChart.innerHTML = '';
+
+      // Render driver rows
+      sortedDrivers.forEach(data => {
+        const row = document.createElement('div');
+        row.className = 'driver-row';
+
+        const label = document.createElement('div');
+        label.className = 'driver-label';
+        label.textContent = data.driver;
+
+        const bar = document.createElement('div');
+        bar.className = 'strategy-bar';
+
+        // Build stint segments
+        const sortedStints = Array.from(data.stints.values()).sort((a, b) => a.startLap - b.startLap);
+
+        sortedStints.forEach((stint, idx) => {
+          const segment = document.createElement('div');
+          segment.className = 'stint-segment';
+          const stintLaps = stint.endLap - stint.startLap + 1;
+          const widthPercent = (stintLaps / maxLap) * 100;
+          segment.style.width = `${widthPercent}%`;
+          segment.style.backgroundColor = getF1TireColor(stint.compound);
+
+          // Add tooltip
+          segment.addEventListener('mouseenter', (e) => {
+            const tyreAgeText = !isNaN(stint.startTyreLife) ? `<br/>Tyre age at start: ${stint.startTyreLife} laps` : '';
+            tooltip.innerHTML = `
+              <strong>${data.driver}</strong><br/>
+              Stint ${idx + 1}: ${stint.compound}<br/>
+              Laps ${stint.startLap}-${stint.endLap} (${stintLaps} laps)${tyreAgeText}
+            `;
+            tooltip.classList.add('show');
+            updateTooltipPosition(e);
+          });
+
+          segment.addEventListener('mousemove', updateTooltipPosition);
+
+          segment.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('show');
+          });
+
+          bar.appendChild(segment);
+        });
+
+        // Add missing laps if driver didn't complete all laps
+        const lastLap = Math.max(...Array.from(data.laps.keys()));
+        if (lastLap < maxLap) {
+          const missingLaps = maxLap - lastLap;
+          const widthPercent = (missingLaps / maxLap) * 100;
+          const missing = document.createElement('div');
+          missing.className = 'missing-laps';
+          missing.style.width = `${widthPercent}%`;
+          bar.appendChild(missing);
+        }
+
+        row.appendChild(label);
+        row.appendChild(bar);
+        strategyChart.appendChild(row);
+      });
+
+      // Render lap axes
+      renderLapAxis(maxLap);
+    }
+
+    function renderLapAxis(maxLap) {
+      lapAxisTop.innerHTML = '';
+      lapAxisBottom.innerHTML = '';
+
+      // Create tick marks at intervals
+      const interval = maxLap > 50 ? 10 : 5;
+
+      for (let lap = 0; lap <= maxLap; lap += interval) {
+        // Top axis
+        const tickTop = document.createElement('div');
+        tickTop.className = 'lap-tick';
+        const position = (lap / maxLap) * 100;
+        tickTop.style.left = `${position}%`;
+
+        const labelTop = document.createElement('div');
+        labelTop.className = 'lap-label';
+        labelTop.textContent = lap;
+        labelTop.style.left = `${position}%`;
+
+        lapAxisTop.appendChild(tickTop);
+        lapAxisTop.appendChild(labelTop);
+
+        // Bottom axis
+        const tickBottom = document.createElement('div');
+        tickBottom.className = 'lap-tick';
+        tickBottom.style.left = `${position}%`;
+
+        const labelBottom = document.createElement('div');
+        labelBottom.className = 'lap-label';
+        labelBottom.textContent = lap;
+        labelBottom.style.left = `${position}%`;
+
+        lapAxisBottom.appendChild(tickBottom);
+        lapAxisBottom.appendChild(labelBottom);
+      }
+    }
+
+    function updateTooltipPosition(e) {
+      const x = e.clientX;
+      const y = e.clientY;
+      tooltip.style.left = `${x + 15}px`;
+      tooltip.style.top = `${y + 15}px`;
+    }
+  </script>
+</body>
+</html>
