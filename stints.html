@@ -771,6 +771,10 @@
     let activeDropdown = null; // Active header dropdown
     let activeDropdownColumn = null; // Track which column's dropdown is open
 
+    // Mappings for synchronized hover between charts
+    let scatterStintToPoint = new Map(); // stint key -> {seriesIndex, dataIndex} in scatter chart
+    let lapTimeStintToSeriesIndex = new Map(); // stint key -> series index in lap time chart
+
     init();
 
     // Handle window resize for ECharts
@@ -1166,7 +1170,8 @@
             datasets.get(compound).push({
               x: paceAdj,
               y: degAdj,
-              label: `${group.lap_Driver} - ${group.event}`
+              label: `${group.lap_Driver} - ${group.event}`,
+              stintKey: key  // Store the stint key
             });
           }
         }
@@ -1175,16 +1180,27 @@
       // Store regression equations for display
       const regressionEquations = new Map();
 
-      // Convert to ECharts format
+      // Convert to ECharts format and build mapping
       const series = [];
+      scatterStintToPoint.clear();
+      let seriesIndex = 0;
+
       datasets.forEach((points, compound) => {
         const color = getF1TireColor(compound);
 
-        // Convert points to ECharts format
+        // Convert points to ECharts format and store stint keys
         const scatterData = points.map(p => ({
           value: [p.x, p.y],
-          label: p.label
+          label: p.label,
+          stintKey: p.stintKey  // Add stint key to data
         }));
+
+        // Store mapping for each point in this series (seriesIndex + dataIndex)
+        points.forEach((p, dataIndex) => {
+          if (p.stintKey) {
+            scatterStintToPoint.set(p.stintKey, { seriesIndex, dataIndex });
+          }
+        });
 
         // Add scatter series
         series.push({
@@ -1197,9 +1213,21 @@
             borderColor: color,
             borderWidth: 0
           },
-          emphasis: { focus: 'series', blurScope: 'global', itemStyle: { borderWidth: 2, shadowBlur: 10, shadowColor: color } },
-          blur: { itemStyle: { opacity: 0.3 } }
+          emphasis: {
+            focus: 'self',
+            blurScope: 'global',
+            itemStyle: {
+              borderWidth: 3,
+              shadowBlur: 15,
+              shadowColor: color,
+              opacity: 1,
+              scale: 1.5
+            }
+          },
+          blur: { itemStyle: { opacity: 0.1 } }
         });
+
+        seriesIndex++;
 
         // Calculate regression line for this compound (deg vs pace)
         const xValues = points.map(p => p.x);
@@ -1246,9 +1274,12 @@
                 type: 'dashed'
               },
               emphasis: { disabled: true },
+              blur: { lineStyle: { opacity: 0.15 } },
               silent: true,
               zlevel: -1
             });
+
+            seriesIndex++; // Increment for trend line
           } catch (error) {
             console.error(`Error calculating regression for ${compound}:`, error);
           }
@@ -1324,6 +1355,29 @@
         // Resize chart to ensure it fills the container properly
         scatterChart.resize();
 
+        // Set up hover synchronization
+        scatterChart.off('mouseover');
+        scatterChart.off('mouseout');
+
+        scatterChart.on('mouseover', { seriesType: 'scatter' }, (params) => {
+          if (params.data && params.data.stintKey && lapTimeChart) {
+            const stintKey = params.data.stintKey;
+            const lapTimeSeriesIndex = lapTimeStintToSeriesIndex.get(stintKey);
+            if (lapTimeSeriesIndex !== undefined) {
+              lapTimeChart.dispatchAction({
+                type: 'highlight',
+                seriesIndex: lapTimeSeriesIndex
+              });
+            }
+          }
+        });
+
+        scatterChart.on('mouseout', { seriesType: 'scatter' }, (params) => {
+          if (lapTimeChart) {
+            lapTimeChart.dispatchAction({ type: 'downplay' });
+          }
+        });
+
         // Display regression equations
         if (regressionEquations.size > 0) {
           equationsSection.style.display = 'block';
@@ -1374,6 +1428,8 @@
 
       // Create ECharts series - one per stint
       const series = [];
+      lapTimeStintToSeriesIndex.clear();
+      let seriesIndex = 0;
 
       selectedStints.forEach(key => {
         const group = filteredGroups.get(key);
@@ -1413,6 +1469,9 @@
         // Sort by tyre life for proper line connection
         data.sort((a, b) => a.value[0] - b.value[0]);
 
+        // Store mapping for this stint
+        lapTimeStintToSeriesIndex.set(key, seriesIndex);
+
         // Create a series for this stint
         series.push({
           name: `${group.lap_Driver} - ${compound} - Stint ${group.lap_Stint}`,
@@ -1424,10 +1483,14 @@
           itemStyle: { borderWidth: 0 },
           color: color,
           lineStyle: { width: 2, opacity: 0.95, color: color },
-          emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 } },
+          emphasis: { focus: 'series', blurScope: 'global', lineStyle: { width: 3.2 }, scale: true },
           blur: { lineStyle: { opacity: 0.5 } },
-          animation: false
+          animation: false,
+          stintKey: key,  // Store stint key for reference
+          triggerLineEvent: true  // Enable line hover events
         });
+
+        seriesIndex++;
       });
 
       lapTimeChart.setOption({
@@ -1477,6 +1540,45 @@
         },
         series: series
       }, true);
+
+      // Set up hover synchronization
+      lapTimeChart.off('mouseover');
+      lapTimeChart.off('mouseout');
+      lapTimeChart.off('highlight');
+      lapTimeChart.off('downplay');
+
+      // Listen to both mouseover (for line/point hover) and highlight (for programmatic emphasis)
+      const handleLapTimeHover = (params) => {
+        if (params.seriesIndex !== undefined && series[params.seriesIndex]) {
+          const stintKey = series[params.seriesIndex].stintKey;
+          if (stintKey && scatterChart) {
+            const scatterPoint = scatterStintToPoint.get(stintKey);
+            if (scatterPoint) {
+              // Highlight single data point on scatter plot
+              scatterChart.dispatchAction({
+                type: 'highlight',
+                seriesIndex: scatterPoint.seriesIndex,
+                dataIndex: scatterPoint.dataIndex
+              });
+            }
+          }
+        }
+      };
+
+      lapTimeChart.on('mouseover', handleLapTimeHover);
+      lapTimeChart.on('highlight', handleLapTimeHover);
+
+      lapTimeChart.on('mouseout', (params) => {
+        if (scatterChart) {
+          scatterChart.dispatchAction({ type: 'downplay' });
+        }
+      });
+
+      lapTimeChart.on('downplay', (params) => {
+        if (scatterChart) {
+          scatterChart.dispatchAction({ type: 'downplay' });
+        }
+      });
     }
 
     // Set up document-level click listener for closing dropdowns (only once)
