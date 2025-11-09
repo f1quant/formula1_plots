@@ -114,5 +114,55 @@ if (document.readyState === 'loading') {
   addReloadDataButton();
 }
 
+// Common UI utilities
+const UIHelpers = {
+  // Populate a select element with unique, non-empty values
+  // Clears existing options and adds new ones
+  populateSelect(selectElement, values, options = {}) {
+    const {
+      filterEmpty = true,
+      defaultValue = null,
+      autoSelectFirst = true,
+      autoSelectValue = null,
+      onChange = null
+    } = options;
+
+    // Clear existing options
+    selectElement.innerHTML = '';
+
+    // Filter and get unique values
+    let filteredValues = values;
+    if (filterEmpty) {
+      filteredValues = values.filter(v => v && String(v).trim() !== '');
+    }
+    const uniqueValues = [...new Set(filteredValues)];
+
+    // Add options
+    uniqueValues.forEach(value => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value;
+      selectElement.appendChild(opt);
+    });
+
+    // Enable the select if there are options
+    selectElement.disabled = uniqueValues.length === 0;
+
+    // Auto-select logic
+    if (uniqueValues.length > 0) {
+      if (autoSelectValue && uniqueValues.includes(autoSelectValue)) {
+        selectElement.value = autoSelectValue;
+        if (onChange) onChange();
+      } else if (autoSelectFirst) {
+        selectElement.value = uniqueValues[0];
+        if (onChange) onChange();
+      }
+    }
+
+    return uniqueValues;
+  }
+};
+
 // Export for use in other scripts
 window.DataCache = DataCache;
+window.UIHelpers = UIHelpers;

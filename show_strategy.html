@@ -523,30 +523,16 @@
       const sessions = [];
       sessionsByKey.forEach((val, key) => {
         if (val.year === selectedSeason && val.round_no === round && val.meeting_name === meeting) {
-          if (val.session_type && val.session_type.trim()) {
-            sessions.push(val.session_type);
-          }
+          sessions.push(val.session_type);
         }
       });
 
-      const uniqueSessions = [...new Set(sessions)];
-      uniqueSessions.forEach(session => {
-        const opt = document.createElement("option");
-        opt.value = session;
-        opt.textContent = session;
-        sessionSelect.appendChild(opt);
+      UIHelpers.populateSelect(sessionSelect, sessions, {
+        filterEmpty: true,
+        autoSelectValue: 'R',
+        autoSelectFirst: true,
+        onChange: onSessionChange
       });
-
-      sessionSelect.disabled = false;
-
-      // Select R by default if available, otherwise first session
-      if (uniqueSessions.includes('R')) {
-        sessionSelect.value = 'R';
-        onSessionChange();
-      } else if (uniqueSessions.length > 0) {
-        sessionSelect.value = uniqueSessions[0];
-        onSessionChange();
-      }
     }
 
     function onSessionChange() {
