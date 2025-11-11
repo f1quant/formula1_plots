@@ -330,6 +330,20 @@ if (document.readyState === 'loading') {
 
 // Common UI utilities
 const UIHelpers = {
+  // Format session type for display
+  formatSessionType(sessionType) {
+    const formatted = {
+      'R': 'Race',
+      'S': 'Sprint',
+      'Q': 'Qualifying',
+      'SQ': 'Sprint Qualifying',
+      'FP1': 'Free Practice 1',
+      'FP2': 'Free Practice 2',
+      'FP3': 'Free Practice 3'
+    };
+    return formatted[sessionType] || sessionType;
+  },
+
   // Populate a select element with unique, non-empty values
   // Clears existing options and adds new ones
   populateSelect(selectElement, values, options = {}) {
@@ -338,7 +352,8 @@ const UIHelpers = {
       defaultValue = null,
       autoSelectFirst = true,
       autoSelectValue = null,
-      onChange = null
+      onChange = null,
+      formatText = null  // Optional formatter function for display text
     } = options;
 
     // Clear existing options
@@ -355,7 +370,7 @@ const UIHelpers = {
     uniqueValues.forEach(value => {
       const opt = document.createElement('option');
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = formatText ? formatText(value) : value;
       selectElement.appendChild(opt);
     });
 
@@ -482,7 +497,8 @@ const UIHelpers = {
       filterEmpty: true,
       autoSelectValue: preferredSession,
       autoSelectFirst: true,
-      onChange: onChange
+      onChange: onChange,
+      formatText: this.formatSessionType
     });
   }
 };
