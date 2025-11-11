@@ -628,6 +628,7 @@
     let allRows = [];
     let eventsByKey = new Map(); // key -> {year, round_no, meeting_name, circuit_name}
     let tyreChoices = new Map(); // key (year||round_no) -> {hard, medium, soft}
+    let circuitConfig = {}; // Circuit config from strat_calc_config.json
     let scatterChart = null; // ECharts instance
     let lapTimeChart = null; // ECharts instance for lap times
     let selectedStints = new Set(); // Set of selected stint keys
@@ -651,6 +652,16 @@
     });
 
     function init() {
+      // Load circuit config JSON
+      fetch('strat_calc_config.json')
+        .then(response => response.json())
+        .then(data => {
+          circuitConfig = data;
+        })
+        .catch(err => {
+          console.error("Error loading strat_calc_config.json:", err);
+        });
+
       // Load tyre_choices.csv first
       Papa.parse(DataCache.getCSVUrl("tyre_choices.csv"), {
         download: true,
@@ -880,6 +891,13 @@
 
       // Reset stint tracking when circuit changes
       window.previousFilteredStints = [];
+
+      // Set fuel effect from circuit config if available
+      if (selectedCircuit && circuitConfig[selectedCircuit] && circuitConfig[selectedCircuit]["Fuel Effect"] !== undefined) {
+        const fuelEffect = circuitConfig[selectedCircuit]["Fuel Effect"];
+        fuelEffectSlider.value = fuelEffect;
+        fuelEffectValue.textContent = fuelEffect.toFixed(3);
+      }
 
       if (!selectedCircuit) {
         const placeholder = document.createElement("div");
