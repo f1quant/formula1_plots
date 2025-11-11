@@ -250,7 +250,7 @@
     }
 
     function loadCSV() {
-      Papa.parse(DataCache.getCSVUrl("all_df.csv"), {
+      ParsedDataCache.loadCSV("all_df.csv", {
         download: true,
         header: true,
         skipEmptyLines: true,

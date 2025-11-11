@@ -58,6 +58,172 @@ const DataCache = {
   }
 };
 
+// Parsed CSV data cache - stores parsed data in IndexedDB to avoid re-parsing
+const ParsedDataCache = {
+  dbName: 'F1ParsedDataCache',
+  storeName: 'parsedCSV',
+  version: 1,
+  db: null,
+
+  // Initialize IndexedDB
+  async init() {
+    if (this.db) return this.db;
+
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, this.version);
+
+      request.onerror = () => {
+        console.error('[ParsedDataCache] IndexedDB error:', request.error);
+        reject(request.error);
+      };
+
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve(this.db);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName, { keyPath: 'filename' });
+        }
+      };
+    });
+  },
+
+  // Get parsed data from cache
+  async get(filename) {
+    try {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([this.storeName], 'readonly');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.get(filename);
+
+        request.onsuccess = () => {
+          if (request.result) {
+            resolve(request.result.results);
+          } else {
+            resolve(null);
+          }
+        };
+
+        request.onerror = () => {
+          console.error('[ParsedDataCache] Error reading from IndexedDB:', request.error);
+          resolve(null);
+        };
+      });
+    } catch (e) {
+      console.error('[ParsedDataCache] Error accessing IndexedDB:', e);
+      return null;
+    }
+  },
+
+  // Store parsed data in cache
+  async set(filename, results) {
+    try {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([this.storeName], 'readwrite');
+        const store = transaction.objectStore(this.storeName);
+        const data = {
+          filename: filename,
+          results: results,
+          rows: results.data ? results.data.length : 0,
+          timestamp: Date.now()
+        };
+        const request = store.put(data);
+
+        request.onsuccess = () => {
+          resolve();
+        };
+
+        request.onerror = () => {
+          console.error('[ParsedDataCache] Error writing to IndexedDB:', request.error);
+          resolve();
+        };
+      });
+    } catch (e) {
+      console.error('[ParsedDataCache] Error accessing IndexedDB:', e);
+    }
+  },
+
+  // Clear all parsed data caches
+  async clear() {
+    try {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([this.storeName], 'readwrite');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.clear();
+
+        request.onsuccess = () => {
+          resolve();
+        };
+
+        request.onerror = () => {
+          console.error('[ParsedDataCache] Error clearing IndexedDB:', request.error);
+          resolve();
+        };
+      });
+    } catch (e) {
+      console.error('[ParsedDataCache] Error accessing IndexedDB:', e);
+    }
+  },
+
+  // Load CSV with caching - wrapper around Papa.parse
+  loadCSV(filename, config) {
+    // Check if we should bust cache
+    const shouldBust = DataCache.shouldBustCache();
+
+    // Try to get from cache if not busting
+    if (!shouldBust) {
+      this.get(filename).then(cached => {
+        if (cached) {
+          // Use cached data
+          if (config.complete) {
+            config.complete(cached);
+          }
+        } else {
+          // Not in cache - load and parse
+          this._loadAndParse(filename, config);
+        }
+      }).catch(() => {
+        // Error accessing cache - just load and parse
+        this._loadAndParse(filename, config);
+      });
+    } else {
+      // Cache bust requested - load and parse
+      this._loadAndParse(filename, config);
+    }
+  },
+
+  // Internal method to load and parse CSV
+  _loadAndParse(filename, config) {
+    const url = DataCache.getCSVUrl(filename);
+
+    const originalComplete = config.complete;
+    config.complete = (results) => {
+      // Store in cache (async, don't wait)
+      this.set(filename, results);
+
+      // Call original callback
+      if (originalComplete) {
+        originalComplete(results);
+      }
+    };
+
+    Papa.parse(url, config);
+  }
+};
+
+// Clear parsed data cache when reload is requested
+const originalReloadData = DataCache.reloadData;
+DataCache.reloadData = function() {
+  ParsedDataCache.clear();
+  originalReloadData.call(this);
+};
+
 // No initialization needed - we use sessionStorage which is cleared between browser sessions
 
 // Create top navigation dynamically
@@ -505,5 +671,6 @@ const DriverInfo = {
 
 // Export for use in other scripts
 window.DataCache = DataCache;
+window.ParsedDataCache = ParsedDataCache;
 window.UIHelpers = UIHelpers;
 window.DriverInfo = DriverInfo;
