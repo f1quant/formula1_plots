@@ -389,6 +389,7 @@
     const tyreLifeAdjustToggle = document.getElementById("tyreLifeAdjustToggle");
 
     let allRows = [];
+    let currentSessionRows = []; // Store current session rows for rainfall/safety car/red flag detection
     let sessionsByKey = new Map(); // key -> {year, round_no, meeting_name, session_type}
     let tyreChoices = new Map(); // key (year||round_no) -> {hard, medium, soft}
     let circuitConfig = {}; // Circuit config from strat_calc_config.json
@@ -720,6 +721,9 @@
         return;
       }
 
+      // Store session rows globally for rainfall/safety car/red flag detection
+      currentSessionRows = matchingRows;
+
       // Get circuit name from first row
       if (matchingRows.length > 0) {
         currentCircuitName = String(matchingRows[0].circuit_name || "").trim();
@@ -778,6 +782,164 @@
       };
 
       return colorMap[compoundLower] || '#999999'; // Default gray for unknown
+    }
+
+    function detectRainfallLaps(minLap, maxLap) {
+      // Returns an array of lap ranges with rainfall: [{start: lap, end: lap}, ...]
+      if (currentSessionRows.length === 0) return [];
+
+      // Group by lap number and count drivers with rainfall
+      const lapRainfall = new Map(); // lap# -> {total: count, rainfall: count}
+
+      currentSessionRows.forEach(r => {
+        const lapNum = parseInt(r.lap_LapNumber);
+        if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
+
+        if (!lapRainfall.has(lapNum)) {
+          lapRainfall.set(lapNum, { total: 0, rainfall: 0 });
+        }
+
+        const lapData = lapRainfall.get(lapNum);
+        lapData.total++;
+
+        // Check if this row has rainfall
+        const rainfall = String(r.weather_Rainfall || "").trim().toLowerCase();
+        if (rainfall === 'true' || rainfall === '1') {
+          lapData.rainfall++;
+        }
+      });
+
+      // Find laps where >= 50% of drivers have rainfall
+      const rainfallLaps = [];
+      lapRainfall.forEach((data, lapNum) => {
+        const rainfallPercent = data.rainfall / data.total;
+        if (rainfallPercent >= 0.5) {
+          rainfallLaps.push(lapNum);
+        }
+      });
+
+      // Merge consecutive laps into ranges
+      if (rainfallLaps.length === 0) return [];
+
+      rainfallLaps.sort((a, b) => a - b);
+      const ranges = [];
+      let start = rainfallLaps[0];
+      let end = rainfallLaps[0];
+
+      for (let i = 1; i < rainfallLaps.length; i++) {
+        if (rainfallLaps[i] === end + 1) {
+          // Consecutive lap
+          end = rainfallLaps[i];
+        } else {
+          // Gap found, save current range and start new one
+          ranges.push({ start, end });
+          start = rainfallLaps[i];
+          end = rainfallLaps[i];
+        }
+      }
+      // Don't forget the last range
+      ranges.push({ start, end });
+
+      return ranges;
+    }
+
+    function detectSafetyCarLaps(minLap, maxLap) {
+      // Returns an array of lap ranges with safety car: [{start: lap, end: lap}, ...]
+      if (currentSessionRows.length === 0) return [];
+
+      // Group by lap number and count drivers with safety car
+      const lapSafetyCar = new Map(); // lap# -> {total: count, safetyCar: count}
+
+      currentSessionRows.forEach(r => {
+        const lapNum = parseInt(r.lap_LapNumber);
+        if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
+
+        if (!lapSafetyCar.has(lapNum)) {
+          lapSafetyCar.set(lapNum, { total: 0, safetyCar: 0 });
+        }
+
+        const lapData = lapSafetyCar.get(lapNum);
+        lapData.total++;
+
+        // Check if this row has safety car (TrackStatus 4, 6, or 7, but NOT 5)
+        const trackStatus = String(r.lap_TrackStatus || "").trim();
+        if (trackStatus.includes('4') || trackStatus.includes('6') || trackStatus.includes('7')) {
+          // Make sure it's not "5" - check if it's exactly 4, 6, or 7
+          if (!trackStatus.includes('5')) {
+            lapData.safetyCar++;
+          }
+        }
+      });
+
+      // Find laps where >= 50% of drivers have safety car
+      const safetyCarLaps = [];
+      lapSafetyCar.forEach((data, lapNum) => {
+        const safetyCarPercent = data.safetyCar / data.total;
+        if (safetyCarPercent >= 0.5) {
+          safetyCarLaps.push(lapNum);
+        }
+      });
+
+      // Merge consecutive laps into ranges
+      if (safetyCarLaps.length === 0) return [];
+
+      safetyCarLaps.sort((a, b) => a - b);
+      const ranges = [];
+      let start = safetyCarLaps[0];
+      let end = safetyCarLaps[0];
+
+      for (let i = 1; i < safetyCarLaps.length; i++) {
+        if (safetyCarLaps[i] === end + 1) {
+          // Consecutive lap
+          end = safetyCarLaps[i];
+        } else {
+          // Gap found, save current range and start new one
+          ranges.push({ start, end });
+          start = safetyCarLaps[i];
+          end = safetyCarLaps[i];
+        }
+      }
+      // Don't forget the last range
+      ranges.push({ start, end });
+
+      return ranges;
+    }
+
+    function detectRedFlagLaps(minLap, maxLap) {
+      // Returns an array of laps with red flags (TrackStatus contains "5")
+      if (currentSessionRows.length === 0) return [];
+
+      // Group by lap number and count drivers with red flag
+      const lapRedFlag = new Map(); // lap# -> {total: count, redFlag: count}
+
+      currentSessionRows.forEach(r => {
+        const lapNum = parseInt(r.lap_LapNumber);
+        if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
+
+        if (!lapRedFlag.has(lapNum)) {
+          lapRedFlag.set(lapNum, { total: 0, redFlag: 0 });
+        }
+
+        const lapData = lapRedFlag.get(lapNum);
+        lapData.total++;
+
+        // Check if this row has red flag (TrackStatus contains "5")
+        const trackStatus = String(r.lap_TrackStatus || "").trim();
+        if (trackStatus.includes('5')) {
+          lapData.redFlag++;
+        }
+      });
+
+      // Find laps where >= 50% of drivers have red flag
+      const redFlagLaps = [];
+      lapRedFlag.forEach((data, lapNum) => {
+        const redFlagPercent = data.redFlag / data.total;
+        if (redFlagPercent >= 0.5) {
+          redFlagLaps.push(lapNum);
+        }
+      });
+
+      return redFlagLaps.sort((a, b) => a - b);
     }
 
     function renderLapTimeChart(driverData) {
@@ -912,6 +1074,132 @@
           seriesIdx++;
         });
       });
+
+      // Determine min and max lap numbers from all series data for visual indicators
+      let minLap = Infinity;
+      let maxLap = -Infinity;
+      series.forEach(s => {
+        if (s.data && s.data.length > 0) {
+          s.data.forEach(point => {
+            const lapNum = point.value[0];
+            if (lapNum < minLap) minLap = lapNum;
+            if (lapNum > maxLap) maxLap = lapNum;
+          });
+        }
+      });
+
+      // Detect rainfall, safety car, and red flag laps (before filters are applied)
+      if (minLap !== Infinity && maxLap !== -Infinity) {
+        const rainfallRanges = detectRainfallLaps(minLap, maxLap);
+        const safetyCarRanges = detectSafetyCarLaps(minLap, maxLap);
+        const redFlagLaps = detectRedFlagLaps(minLap, maxLap);
+
+        // Add rainfall shading as a markArea series
+        if (rainfallRanges.length > 0) {
+          const markAreaData = rainfallRanges.map(range => [
+            {
+              xAxis: range.start - 0.5,
+              name: range.start === range.end
+                ? `Rainfall (Lap ${range.start})`
+                : `Rainfall (Laps ${range.start}-${range.end})`
+            },
+            { xAxis: range.end + 0.5 }
+          ]);
+
+          series.push({
+            name: 'Rainfall',
+            type: 'line',
+            data: [],
+            markArea: {
+              silent: false,
+              itemStyle: {
+                color: 'rgba(30, 144, 255, 0.1)' // Blue with transparency
+              },
+              data: markAreaData,
+              label: {
+                show: false
+              },
+              tooltip: {
+                formatter: (params) => {
+                  return params.name;
+                }
+              }
+            },
+            animation: false
+          });
+        }
+
+        // Add safety car shading as a markArea series
+        if (safetyCarRanges.length > 0) {
+          const markAreaData = safetyCarRanges.map(range => [
+            {
+              xAxis: range.start - 0.5,
+              name: range.start === range.end
+                ? `Safety Car (Lap ${range.start})`
+                : `Safety Car (Laps ${range.start}-${range.end})`
+            },
+            { xAxis: range.end + 0.5 }
+          ]);
+
+          series.push({
+            name: 'Safety Car',
+            type: 'line',
+            data: [],
+            markArea: {
+              silent: false,
+              itemStyle: {
+                color: 'rgba(150, 150, 7, 0.15)'
+              },
+              data: markAreaData,
+              label: {
+                show: false
+              },
+              tooltip: {
+                formatter: (params) => {
+                  return params.name;
+                }
+              }
+            },
+            animation: false
+          });
+        }
+
+        // Add red flag vertical lines as a markLine series
+        if (redFlagLaps.length > 0) {
+          const markLineData = redFlagLaps.map(lap => ({
+            xAxis: lap,
+            name: `Red Flag (Lap ${lap})`,
+            label: {
+              show: false
+            }
+          }));
+
+          series.push({
+            name: 'Red Flag',
+            type: 'line',
+            data: [],
+            markLine: {
+              silent: false,
+              symbol: 'none',
+              lineStyle: {
+                color: 'rgba(255, 0, 0, 0.5)',
+                width: 2,
+                type: 'dotted'
+              },
+              data: markLineData,
+              label: {
+                show: false
+              },
+              tooltip: {
+                formatter: (params) => {
+                  return params.name;
+                }
+              }
+            },
+            animation: false
+          });
+        }
+      }
 
       // If no drivers selected, clear the chart
       if (series.length === 0) {
