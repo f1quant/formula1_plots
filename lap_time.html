@@ -476,8 +476,7 @@
             row.round_no !== undefined &&
             row.meeting_name !== undefined &&
             row.session_type !== undefined &&
-            String(row.year || "").trim() !== "2018" &&
-            String(row.session_type || "").trim() === "R"  // Only Race sessions
+            String(row.year || "").trim() !== "2018"
           );
 
           if (!allRows.length) {
@@ -633,10 +632,6 @@
       const includeRetired = document.getElementById('filterIncludeRetired').checked;
 
       return rows.filter(r => {
-        // Session type filter - only 'R' (Race)
-        const sessionType = String(r.session_type || "").trim();
-        if (sessionType !== 'R') return false;
-
         // Min lap number
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap) return false;
@@ -885,7 +880,7 @@
             data: data,
             showSymbol: true,
             symbol: 'circle',
-            symbolSize: 8,
+            symbolSize: 4,
             lineStyle: { width: 2, color: compoundColor },
             triggerLineEvent: true, // Enable line hover events
             itemStyle: {
