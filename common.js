@@ -243,7 +243,8 @@ function createTopNav() {
     { href: 'strategy.html', text: 'Strategy', page: 'strategy' },
     { href: 'race_trace.html', text: 'Race Trace', page: 'race_trace' },
     { href: 'tyre_deg.html', text: 'Tyre Deg', page: 'tyre_deg' },
-    { href: 'calculator.html', text: 'Calculator', page: 'calculator' }
+    { href: 'fuel_effect.html', text: 'Fuel Effect', page: 'fuel_effect' },
+    { href: 'calculator.html', text: 'Calculator', page: 'calculator' },
   ];
 
   // Create links
