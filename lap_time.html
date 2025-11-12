@@ -399,6 +399,7 @@
     let driverColors = new Map(); // Driver colors for current event
     let currentEventInfo = null; // Store current year, round, session type
     let currentCircuitName = null; // Store current circuit name for config lookup
+    let scheduledLaps = null; // Store scheduled laps for the current session
 
     init();
 
@@ -724,9 +725,13 @@
       // Store session rows globally for rainfall/safety car/red flag detection
       currentSessionRows = matchingRows;
 
-      // Get circuit name from first row
+      // Get circuit name and scheduled laps from first row
       if (matchingRows.length > 0) {
         currentCircuitName = String(matchingRows[0].circuit_name || "").trim();
+        scheduledLaps = parseInt(matchingRows[0].sched_laps);
+        if (isNaN(scheduledLaps)) {
+          scheduledLaps = null;
+        }
 
         // Update adjustment inputs from circuit config
         if (currentCircuitName && circuitConfig[currentCircuitName]) {
@@ -1243,7 +1248,8 @@
           axisLine: { lineStyle: { color: '#9ca3af' } },
           axisLabel: { color: '#9ca3af' },
           splitLine: { lineStyle: { color: 'rgba(148, 163, 253, 0.1)' } },
-          scale: true
+          min: 1,
+          max: scheduledLaps || 'dataMax'
         },
         yAxis: {
           type: 'value',
