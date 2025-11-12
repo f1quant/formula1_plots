@@ -872,7 +872,13 @@
           nameGap: 30,
           nameTextStyle: { color: '#8b8b8b', fontSize: 12 },
           axisLine: { lineStyle: { color: '#2a2f3a' } },
-          axisLabel: { color: '#8b8b8b' },
+          axisLabel: {
+            color: '#8b8b8b',
+            formatter: function(value) {
+              // Only show label if it's an integer
+              return Number.isInteger(value) ? value : '';
+            }
+          },
           splitLine: { lineStyle: { color: '#232833' } },
           min: minLap,
           max: rightX
