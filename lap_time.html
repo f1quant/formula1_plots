@@ -1080,6 +1080,9 @@
         });
       });
 
+      // Store the number of driver series before adding visual indicators
+      const driverSeriesCount = series.length;
+
       // Determine min and max lap numbers from all series data for visual indicators
       let minLap = Infinity;
       let maxLap = -Infinity;
@@ -1283,8 +1286,13 @@
 
           const driverSeriesIndices = seriesIndexByDriver.get(hoveredDriver) || [];
 
-          // Update chart option to emphasize/blur
+          // Update chart option to emphasize/blur (only driver series)
           const updatedSeries = series.map((s, idx) => {
+            // Skip visual indicator series (rainfall, safety car, red flag)
+            if (idx >= driverSeriesCount) {
+              return {}; // No changes to visual indicators
+            }
+
             if (driverSeriesIndices.includes(idx)) {
               // Emphasize this driver's series
               return {
@@ -1310,11 +1318,17 @@
         if (params.componentType === 'series' && params.seriesType === 'line') {
           currentHoveredDriver = null;
 
-          // Reset all series to normal
-          const resetSeries = series.map(s => ({
-            lineStyle: { width: 2, color: s.lineStyle.color, opacity: 1 },
-            itemStyle: { ...s.itemStyle, opacity: 1 }
-          }));
+          // Reset driver series to normal (skip visual indicators)
+          const resetSeries = series.map((s, idx) => {
+            // Skip visual indicator series
+            if (idx >= driverSeriesCount) {
+              return {}; // No changes to visual indicators
+            }
+            return {
+              lineStyle: { width: 2, color: s.lineStyle.color, opacity: 1 },
+              itemStyle: { ...s.itemStyle, opacity: 1 }
+            };
+          });
 
           chart.setOption({
             series: resetSeries
