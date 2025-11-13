@@ -344,6 +344,175 @@
       color: var(--text-color);
       font-size: 14px;
     }
+
+    /* ========================================================================
+       LAP TIME PANEL STYLES
+       ======================================================================== */
+
+    .lap-time-layout {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .lap-time-sidebar {
+      width: 200px;
+      padding: 12px;
+      background: rgba(0, 224, 255, 0.03);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+      max-height: 580px;
+      overflow-y: auto;
+    }
+
+    .lap-time-chart-wrapper {
+      flex: 1;
+    }
+
+    .lap-time-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    .toggle-button {
+      padding: 4px 12px;
+      font-size: 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: rgba(0, 0, 0, 0.3);
+      color: var(--text-color);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .toggle-button.active {
+      background: var(--accent-color);
+      color: #000;
+      border-color: var(--accent-color);
+    }
+
+    .toggle-button:hover {
+      border-color: var(--accent-color);
+    }
+
+    #lapTimeChart {
+      width: 100%;
+      height: 580px;
+    }
+
+    .lap-time-filters {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    .filter-panel {
+      padding: 16px;
+      background: rgba(0, 224, 255, 0.03);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+    }
+
+    .filters-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .drivers-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-color);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .filters-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .filter-item {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-label {
+      font-size: 10px;
+      color: var(--muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .filter-item input[type="number"] {
+      width: 100px;
+    }
+
+    .exclude-checkboxes {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      accent-color: var(--accent-color);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .checkbox-group label {
+      font-size: 11px;
+      color: var(--text-color);
+      cursor: pointer;
+    }
+
+    .lap-time-driver-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      margin-bottom: 2px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-color);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .lap-time-driver-item:hover {
+      background: rgba(0, 224, 255, 0.1);
+    }
+
+    .lap-time-driver-item input[type="checkbox"] {
+      accent-color: var(--accent-color);
+      width: 13px;
+      height: 13px;
+      cursor: pointer;
+    }
+
+    .lap-time-driver-item label {
+      cursor: pointer;
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -416,8 +585,87 @@
 
     <!-- Lap Time Panel -->
     <div id="lap-time-panel" class="content-panel">
-      <h2>Lap Time Panel</h2>
-      <p>Lap time content will go here...</p>
+      <div class="lap-time-layout">
+        <div class="lap-time-sidebar">
+          <div class="drivers-title">Drivers</div>
+          <div id="lapTimeDriversList"></div>
+        </div>
+        <div class="lap-time-chart-wrapper">
+          <div class="lap-time-controls">
+            <button id="fuelAdjustToggle" class="toggle-button">Fuel Adjusted</button>
+            <button id="tyreLifeAdjustToggle" class="toggle-button">Tyre Life Adjusted</button>
+          </div>
+          <div id="lapTimeChart"></div>
+        </div>
+      </div>
+
+      <div class="lap-time-filters">
+        <div class="filter-panel">
+          <div class="filters-title">Adjustments</div>
+          <div class="filters-grid">
+            <div class="filter-item">
+              <div class="filter-label">Hard Deg (sec/lap)</div>
+              <input type="number" id="degHard" value="0.05" min="0" step="0.01">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Medium Deg (sec/lap)</div>
+              <input type="number" id="degMedium" value="0.08" min="0" step="0.01">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Soft Deg (sec/lap)</div>
+              <input type="number" id="degSoft" value="0.12" min="0" step="0.01">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Fuel Effect (sec/lap)</div>
+              <input type="number" id="fuelEffect" value="0.03" min="0" step="0.01">
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-panel">
+          <div class="filters-title">Lap Filters</div>
+          <div class="filters-grid">
+            <div class="filter-item">
+              <div class="filter-label">Laps to Discard at Start</div>
+              <input type="number" id="filterMinLap" value="2" min="0">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Laps to Discard at End</div>
+              <input type="number" id="filterEndLaps" value="0" min="0">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Min Distance to Car Ahead</div>
+              <input type="number" id="filterMinDist" value="0" min="0" step="0.1">
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-panel">
+          <div class="filters-title">Include</div>
+          <div class="exclude-checkboxes">
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterIncludeLapped" checked>
+              <label for="filterIncludeLapped">Lapped</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterIncludeRetired" checked>
+              <label for="filterIncludeRetired">Retired</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterRainfall" checked>
+              <label for="filterRainfall">Rainfall</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterSafetyCar">
+              <label for="filterSafetyCar">Safety Car</label>
+            </div>
+            <div class="checkbox-group">
+              <input type="checkbox" id="filterPitLaps">
+              <label for="filterPitLaps">Pit Laps</label>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tyre Degradation Panel -->
@@ -531,6 +779,34 @@
           break;
         case 'lap-time':
           // Initialize lap time panel
+          lapTimeCurrentSessionRows = sessionData;
+          lapTimeDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
+          lapTimeScheduledLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : null;
+          if (isNaN(lapTimeScheduledLaps)) {
+            lapTimeScheduledLaps = null;
+          }
+
+          // Update adjustment inputs from circuit config if available
+          const circuitName = sessionData.length > 0 ? String(sessionData[0].circuit_name || "").trim() : "";
+          if (circuitName && circuitConfig[circuitName]) {
+            const config = circuitConfig[circuitName];
+            if (config["Hard Deg"] !== undefined) {
+              document.getElementById('degHard').value = config["Hard Deg"];
+            }
+            if (config["Medium Deg"] !== undefined) {
+              document.getElementById('degMedium').value = config["Medium Deg"];
+            }
+            if (config["Soft Deg"] !== undefined) {
+              document.getElementById('degSoft').value = config["Soft Deg"];
+            }
+            if (config["Fuel Effect"] !== undefined) {
+              document.getElementById('fuelEffect').value = config["Fuel Effect"];
+            }
+          }
+
+          lapTimeSelectedDrivers.clear();
+          const filteredRows = applyLapTimeFilters(sessionData);
+          processLapTimeData(filteredRows);
           break;
         case 'tyre-deg':
           // Initialize tyre deg panel
@@ -1030,11 +1306,12 @@
       });
     }
 
-    function detectRainfallLaps(minLap, maxLap) {
-      if (raceTraceCurrentSessionRows.length === 0) return [];
+    // Shared detection functions that work with any session rows
+    function detectRainfallLaps(sessionRows, minLap, maxLap) {
+      if (!sessionRows || sessionRows.length === 0) return [];
 
       const lapRainfall = new Map();
-      raceTraceCurrentSessionRows.forEach(r => {
+      sessionRows.forEach(r => {
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
 
@@ -1078,11 +1355,11 @@
       return ranges;
     }
 
-    function detectSafetyCarLaps(minLap, maxLap) {
-      if (raceTraceCurrentSessionRows.length === 0) return [];
+    function detectSafetyCarLaps(sessionRows, minLap, maxLap) {
+      if (!sessionRows || sessionRows.length === 0) return [];
 
       const lapSafetyCar = new Map();
-      raceTraceCurrentSessionRows.forEach(r => {
+      sessionRows.forEach(r => {
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
 
@@ -1128,11 +1405,11 @@
       return ranges;
     }
 
-    function detectRedFlagLaps(minLap, maxLap) {
-      if (raceTraceCurrentSessionRows.length === 0) return [];
+    function detectRedFlagLaps(sessionRows, minLap, maxLap) {
+      if (!sessionRows || sessionRows.length === 0) return [];
 
       const lapRedFlag = new Map();
-      raceTraceCurrentSessionRows.forEach(r => {
+      sessionRows.forEach(r => {
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap || lapNum > maxLap) return;
 
@@ -1173,10 +1450,10 @@
       const minLap = parseInt(raceTraceLapMin.value);
       const maxLap = parseInt(raceTraceLapMax.value);
 
-      // Detect rainfall, safety car, and red flag laps
-      const rainfallRanges = detectRainfallLaps(minLap, maxLap);
-      const safetyCarRanges = detectSafetyCarLaps(minLap, maxLap);
-      const redFlagLaps = detectRedFlagLaps(minLap, maxLap);
+      // Detect rainfall, safety car, and red flag laps using unfiltered session data
+      const rainfallRanges = detectRainfallLaps(raceTraceCurrentSessionRows, minLap, maxLap);
+      const safetyCarRanges = detectSafetyCarLaps(raceTraceCurrentSessionRows, minLap, maxLap);
+      const redFlagLaps = detectRedFlagLaps(raceTraceCurrentSessionRows, minLap, maxLap);
 
       // Calculate gaps by lap for scaling
       const gapsByLap = new Map();
@@ -1443,7 +1720,581 @@
     }
 
     // Lap Time Panel
-    // (Will be populated from lap_time.html)
+    const lapTimeDriversList = document.getElementById('lapTimeDriversList');
+    const lapTimeChart = document.getElementById('lapTimeChart');
+    const fuelAdjustToggle = document.getElementById('fuelAdjustToggle');
+    const tyreLifeAdjustToggle = document.getElementById('tyreLifeAdjustToggle');
+
+    let lapTimeChartInstance = null;
+    let lapTimeSelectedDrivers = new Set();
+    let lapTimeCurrentGroups = new Map();
+    let lapTimeDriverColors = new Map();
+    let lapTimeScheduledLaps = null;
+    let lapTimeCurrentSessionRows = [];
+    let circuitConfig = {};
+
+    // Load circuit config
+    function loadCircuitConfig() {
+      fetch('strat_calc_config.json')
+        .then(response => response.json())
+        .then(data => {
+          circuitConfig = data;
+        })
+        .catch(err => {
+          console.error("Error loading strat_calc_config.json:", err);
+        });
+    }
+
+    loadCircuitConfig();
+
+    // Set up lap time filter listeners
+    function setupLapTimeFilterListeners() {
+      document.getElementById("filterMinLap").addEventListener("input", onLapTimeFilterChange);
+      document.getElementById("filterEndLaps").addEventListener("input", onLapTimeFilterChange);
+      document.getElementById("filterMinDist").addEventListener("input", onLapTimeFilterChange);
+      document.getElementById("filterRainfall").addEventListener("change", onLapTimeFilterChange);
+      document.getElementById("filterSafetyCar").addEventListener("change", onLapTimeFilterChange);
+      document.getElementById("filterPitLaps").addEventListener("change", onLapTimeFilterChange);
+      document.getElementById('filterIncludeLapped').addEventListener('change', onLapTimeFilterChange);
+      document.getElementById('filterIncludeRetired').addEventListener('change', onLapTimeFilterChange);
+      document.getElementById('degHard').addEventListener('input', onLapTimeAdjustmentChange);
+      document.getElementById('degMedium').addEventListener('input', onLapTimeAdjustmentChange);
+      document.getElementById('degSoft').addEventListener('input', onLapTimeAdjustmentChange);
+      document.getElementById('fuelEffect').addEventListener('input', onLapTimeAdjustmentChange);
+
+      fuelAdjustToggle.addEventListener('click', function() {
+        this.classList.toggle('active');
+        renderLapTimeChart();
+      });
+
+      tyreLifeAdjustToggle.addEventListener('click', function() {
+        this.classList.toggle('active');
+        renderLapTimeChart();
+      });
+    }
+
+    setupLapTimeFilterListeners();
+
+    function onLapTimeFilterChange() {
+      if (!currentSessionData || currentSessionData.length === 0) return;
+      const filteredRows = applyLapTimeFilters(currentSessionData);
+      processLapTimeData(filteredRows);
+    }
+
+    function onLapTimeAdjustmentChange() {
+      if (lapTimeCurrentGroups.size > 0) {
+        renderLapTimeChart();
+      }
+    }
+
+    function applyLapTimeFilters(rows) {
+      const lapsToDiscard = parseInt(document.getElementById("filterMinLap").value) || 0;
+      const minLap = lapsToDiscard + 1;
+      const endLaps = parseInt(document.getElementById("filterEndLaps").value) || 0;
+      const minDist = parseFloat(document.getElementById("filterMinDist").value) || 0;
+      const includeRainfall = document.getElementById("filterRainfall").checked;
+      const includeSafetyCar = document.getElementById("filterSafetyCar").checked;
+      const includePitLaps = document.getElementById("filterPitLaps").checked;
+      const includeLapped = document.getElementById('filterIncludeLapped').checked;
+      const includeRetired = document.getElementById('filterIncludeRetired').checked;
+
+      return rows.filter(r => {
+        const lapNum = parseInt(r.lap_LapNumber);
+        if (isNaN(lapNum) || lapNum < minLap) return false;
+
+        const schedLaps = parseInt(r.sched_laps);
+        if (!isNaN(schedLaps)) {
+          const maxLap = schedLaps - endLaps;
+          if (lapNum > maxLap) return false;
+        }
+
+        const status = String(r.finish_status ?? "").trim();
+        const plusLapsMatch = status.match(/^\+(\d+)\sLaps$/);
+        const lapsBehind = plusLapsMatch ? Number(plusLapsMatch[1]) : 0;
+        if (lapsBehind > 1) return false;
+
+        const isLapped = status === "Lapped" || status === "+1 Lap";
+        if (!includeLapped && isLapped) return false;
+
+        const isFinished = status === "Finished" || isLapped;
+        const isRetired = !isFinished;
+        if (!includeRetired && isRetired) return false;
+
+        if (!includeRainfall) {
+          const rainfall = String(r.weather_Rainfall || "").trim().toLowerCase();
+          if (rainfall === "true" || rainfall === "1") return false;
+        }
+
+        if (!includeSafetyCar) {
+          const trackStatus = String(r.lap_TrackStatus || "").trim();
+          if (trackStatus.includes("4") || trackStatus.includes("5") ||
+              trackStatus.includes("6") || trackStatus.includes("7")) {
+            return false;
+          }
+        }
+
+        if (!includePitLaps) {
+          const pitIn = String(r.lap_PitInTime || "").trim();
+          const pitOut = String(r.lap_PitOutTime || "").trim();
+          if ((pitIn && pitIn.toLowerCase() !== "na" && pitIn !== "") ||
+              (pitOut && pitOut.toLowerCase() !== "na" && pitOut !== "")) {
+            return false;
+          }
+        }
+
+        const dist = parseFloat(r.min_dist);
+        if (!isNaN(dist) && dist < minDist) return false;
+
+        return true;
+      });
+    }
+
+    function processLapTimeData(rows) {
+      if (!rows || rows.length === 0) {
+        lapTimeCurrentGroups = new Map();
+        lapTimeSelectedDrivers.clear();
+        buildLapTimeDriversList([]);
+        renderLapTimeChart();
+        return;
+      }
+
+      const driverData = new Map();
+
+      rows.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNumber = parseInt(r.lap_LapNumber);
+        const lapTime = parseFloat(r.lap_LapTime);
+        const compound = String(r.lap_Compound || "").trim();
+        const stint = String(r.lap_Stint || "").trim();
+        const position = parseInt(r.lap_Position);
+        const tyreLife = parseInt(r.lap_TyreLife);
+        const schedLaps = parseInt(r.sched_laps);
+
+        if (!driver || isNaN(lapNumber) || isNaN(lapTime) || !stint) return;
+
+        if (!driverData.has(driver)) {
+          driverData.set(driver, {
+            driver: driver,
+            stints: new Map(),
+            maxLapNum: 0,
+            lastPosition: null
+          });
+        }
+
+        const data = driverData.get(driver);
+        const driverStints = data.stints;
+
+        if (!driverStints.has(stint)) {
+          driverStints.set(stint, {
+            compound: compound,
+            laps: []
+          });
+        }
+
+        driverStints.get(stint).laps.push({
+          lapNumber: lapNumber,
+          lapTime: lapTime,
+          compound: compound,
+          tyreLife: tyreLife,
+          schedLaps: schedLaps
+        });
+
+        if (lapNumber > data.maxLapNum) {
+          data.maxLapNum = lapNumber;
+          data.lastPosition = position;
+        }
+      });
+
+      const sortedDrivers = sortDriversByFinishingOrder(Array.from(driverData.values()));
+
+      const sortedDriverData = new Map();
+      sortedDrivers.forEach(d => {
+        sortedDriverData.set(d.driver, d.stints);
+      });
+      lapTimeCurrentGroups = sortedDriverData;
+
+      const drivers = sortedDrivers.map(d => d.driver);
+
+      if (lapTimeSelectedDrivers.size === 0 && drivers.length > 0) {
+        const top5 = drivers.slice(0, Math.min(5, drivers.length));
+        top5.forEach(driver => lapTimeSelectedDrivers.add(driver));
+      }
+
+      buildLapTimeDriversList(drivers);
+      renderLapTimeChart();
+    }
+
+    function buildLapTimeDriversList(drivers) {
+      lapTimeDriversList.innerHTML = '';
+
+      if (drivers.length === 0) return;
+
+      drivers.forEach(driver => {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'lap-time-driver-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = driver;
+        checkbox.checked = lapTimeSelectedDrivers.has(driver);
+
+        const driverColor = lapTimeDriverColors.get(driver) || 'var(--accent-color)';
+        checkbox.style.accentColor = driverColor;
+
+        checkbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            lapTimeSelectedDrivers.add(driver);
+          } else {
+            lapTimeSelectedDrivers.delete(driver);
+          }
+          renderLapTimeChart();
+        });
+
+        const label = document.createElement('label');
+        label.textContent = driver;
+        label.style.cursor = 'pointer';
+        label.style.color = driverColor;
+
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(label);
+        lapTimeDriversList.appendChild(wrapper);
+      });
+    }
+
+    function getF1TireColor(compound) {
+      const compoundLower = String(compound || "").trim().toLowerCase();
+      const colorMap = {
+        'soft': '#FF0000',
+        'medium': '#FFF200',
+        'hard': '#FFFFFF',
+        'intermediate': '#00FF00',
+        'wet': '#0000FF'
+      };
+      return colorMap[compoundLower] || '#999999';
+    }
+
+    function renderLapTimeChart() {
+      if (lapTimeCurrentGroups.size === 0) {
+        if (lapTimeChartInstance) {
+          lapTimeChartInstance.clear();
+        }
+        return;
+      }
+
+      if (!lapTimeChartInstance) {
+        lapTimeChartInstance = echarts.init(lapTimeChart);
+      }
+
+      const fuelAdjusted = fuelAdjustToggle.classList.contains('active');
+      const tyreLifeAdjusted = tyreLifeAdjustToggle.classList.contains('active');
+      const fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0;
+      const degHard = parseFloat(document.getElementById('degHard').value) || 0;
+      const degMedium = parseFloat(document.getElementById('degMedium').value) || 0;
+      const degSoft = parseFloat(document.getElementById('degSoft').value) || 0;
+
+      const degradationMap = {
+        'HARD': degHard,
+        'MEDIUM': degMedium,
+        'SOFT': degSoft
+      };
+
+      const series = [];
+      const seriesIndexByDriver = new Map();
+      let seriesIdx = 0;
+
+      lapTimeCurrentGroups.forEach((stints, driver) => {
+        if (!lapTimeSelectedDrivers.has(driver)) return;
+
+        const stintArray = Array.from(stints.entries()).sort((a, b) => {
+          return parseInt(a[0]) - parseInt(b[0]);
+        });
+
+        const lastStintIndex = stintArray.length - 1;
+
+        stintArray.forEach(([stintNumber, stintData], stintIndex) => {
+          const isLastStint = stintIndex === lastStintIndex;
+          const sortedLaps = stintData.laps.slice().sort((a, b) => a.lapNumber - b.lapNumber);
+
+          const data = sortedLaps.map(lap => {
+            let adjustedLapTime = lap.lapTime;
+
+            if (fuelAdjusted && !isNaN(lap.schedLaps)) {
+              adjustedLapTime -= (lap.schedLaps - lap.lapNumber) * fuelEffect;
+            }
+
+            if (tyreLifeAdjusted && !isNaN(lap.tyreLife)) {
+              const tyreDeg = degradationMap[lap.compound.toUpperCase()] || 0;
+              adjustedLapTime -= lap.tyreLife * tyreDeg;
+            }
+
+            return {
+              value: [lap.lapNumber, adjustedLapTime],
+              driver: driver,
+              compound: lap.compound,
+              stint: stintNumber,
+              originalLapTime: lap.lapTime
+            };
+          });
+
+          const compound = stintData.compound;
+          const compoundColor = getF1TireColor(compound);
+          const driverColor = lapTimeDriverColors.get(driver) || '#888888';
+
+          if (!seriesIndexByDriver.has(driver)) {
+            seriesIndexByDriver.set(driver, []);
+          }
+          seriesIndexByDriver.get(driver).push(seriesIdx);
+
+          series.push({
+            name: `${driver} - Stint ${stintNumber}`,
+            type: 'line',
+            data: data,
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 4,
+            lineStyle: { width: 2, color: compoundColor },
+            triggerLineEvent: true,
+            itemStyle: {
+              color: driverColor,
+              borderColor: driverColor,
+              borderWidth: 2
+            },
+            emphasis: {
+              focus: 'none',
+              lineStyle: { width: 3 },
+              scale: true
+            },
+            blur: {
+              lineStyle: { opacity: 0.05 },
+              itemStyle: { opacity: 0.05 }
+            },
+            endLabel: {
+              show: isLastStint,
+              formatter: driver,
+              position: 'right',
+              offset: [6, 0],
+              color: driverColor,
+              fontSize: 11
+            },
+            animation: false,
+            driver: driver
+          });
+
+          seriesIdx++;
+        });
+      });
+
+      const driverSeriesCount = series.length;
+
+      // Detect rainfall, safety car, and red flag laps for the entire session range
+      if (lapTimeCurrentSessionRows.length > 0) {
+        // Use the full session lap range (1 to scheduled laps, or max lap in data)
+        const minLap = 1;
+        const maxLap = lapTimeScheduledLaps || Math.max(...lapTimeCurrentSessionRows.map(r => parseInt(r.lap_LapNumber)).filter(n => !isNaN(n)));
+
+        const rainfallRanges = detectRainfallLaps(lapTimeCurrentSessionRows, minLap, maxLap);
+        const safetyCarRanges = detectSafetyCarLaps(lapTimeCurrentSessionRows, minLap, maxLap);
+        const redFlagLaps = detectRedFlagLaps(lapTimeCurrentSessionRows, minLap, maxLap);
+
+        if (rainfallRanges.length > 0) {
+          const markAreaData = rainfallRanges.map(range => [
+            {
+              xAxis: range.start - 0.5,
+              name: range.start === range.end
+                ? `Rainfall (Lap ${range.start})`
+                : `Rainfall (Laps ${range.start}-${range.end})`
+            },
+            { xAxis: range.end + 0.5 }
+          ]);
+
+          series.push({
+            name: 'Rainfall',
+            type: 'line',
+            data: [],
+            markArea: {
+              silent: false,
+              itemStyle: { color: 'rgba(30, 144, 255, 0.1)' },
+              data: markAreaData,
+              label: { show: false },
+              tooltip: { formatter: (params) => params.name }
+            },
+            animation: false
+          });
+        }
+
+        if (safetyCarRanges.length > 0) {
+          const markAreaData = safetyCarRanges.map(range => [
+            {
+              xAxis: range.start - 0.5,
+              name: range.start === range.end
+                ? `Safety Car (Lap ${range.start})`
+                : `Safety Car (Laps ${range.start}-${range.end})`
+            },
+            { xAxis: range.end + 0.5 }
+          ]);
+
+          series.push({
+            name: 'Safety Car',
+            type: 'line',
+            data: [],
+            markArea: {
+              silent: false,
+              itemStyle: { color: 'rgba(150, 150, 7, 0.15)' },
+              data: markAreaData,
+              label: { show: false },
+              tooltip: { formatter: (params) => params.name }
+            },
+            animation: false
+          });
+        }
+
+        if (redFlagLaps.length > 0) {
+          const markLineData = redFlagLaps.map(lap => ({
+            xAxis: lap,
+            name: `Red Flag (Lap ${lap})`,
+            label: { show: false }
+          }));
+
+          series.push({
+            name: 'Red Flag',
+            type: 'line',
+            data: [],
+            markLine: {
+              silent: false,
+              symbol: 'none',
+              lineStyle: {
+                color: 'rgba(255, 0, 0, 0.5)',
+                width: 2,
+                type: 'dotted'
+              },
+              data: markLineData,
+              label: { show: false },
+              tooltip: { formatter: (params) => params.name }
+            },
+            animation: false
+          });
+        }
+      }
+
+      if (series.length === 0) {
+        lapTimeChartInstance.clear();
+        return;
+      }
+
+      lapTimeChartInstance.setOption({
+        backgroundColor: 'transparent',
+        grid: { left: 60, right: 100, top: 20, bottom: 60 },
+        legend: { show: false },
+        tooltip: {
+          show: true,
+          trigger: 'item',
+          confine: true,
+          borderColor: '#2a2f3a',
+          backgroundColor: 'rgba(26,29,36,0.96)',
+          textStyle: { color: '#e8e8e8' },
+          extraCssText: 'padding:10px 12px;border-radius:10px',
+          formatter: (p) => {
+            const data = p.data;
+            const lapNumber = data.value[0];
+            const lapTime = data.value[1];
+            return `
+              <strong>${data.driver}</strong><br/>
+              Lap: ${lapNumber}<br/>
+              Time: ${lapTime.toFixed(3)}s<br/>
+              Compound: ${data.compound}<br/>
+              Stint: ${data.stint}
+            `;
+          }
+        },
+        xAxis: {
+          type: 'value',
+          name: 'Lap Number',
+          nameLocation: 'middle',
+          nameGap: 30,
+          nameTextStyle: { color: '#00e0ff', fontSize: 12, fontWeight: 600 },
+          axisLine: { lineStyle: { color: '#9ca3af' } },
+          axisLabel: { color: '#9ca3af' },
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 253, 0.1)' } },
+          min: 1,
+          max: lapTimeScheduledLaps || 'dataMax'
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Lap Time (s)',
+          nameLocation: 'middle',
+          nameGap: 45,
+          nameTextStyle: { color: '#00e0ff', fontSize: 12, fontWeight: 600 },
+          axisLine: { lineStyle: { color: '#9ca3af' } },
+          axisLabel: { color: '#9ca3af' },
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 253, 0.1)' } },
+          scale: true
+        },
+        series: series
+      }, true);
+
+      lapTimeChartInstance.resize();
+
+      // Custom hover behavior
+      lapTimeChartInstance.off('mouseover');
+      lapTimeChartInstance.off('mouseout');
+
+      let currentHoveredDriver = null;
+
+      lapTimeChartInstance.on('mouseover', (params) => {
+        if (params.componentType === 'series' && params.seriesType === 'line') {
+          const hoveredDriver = params.seriesName.split(' - ')[0];
+
+          if (currentHoveredDriver === hoveredDriver) return;
+          currentHoveredDriver = hoveredDriver;
+
+          const driverSeriesIndices = seriesIndexByDriver.get(hoveredDriver) || [];
+
+          const updatedSeries = series.map((s, idx) => {
+            if (idx >= driverSeriesCount) return {};
+
+            if (driverSeriesIndices.includes(idx)) {
+              return {
+                lineStyle: { width: 3, color: s.lineStyle.color, opacity: 1 },
+                itemStyle: { ...s.itemStyle, opacity: 1 },
+                endLabel: { ...s.endLabel, opacity: 1 }
+              };
+            } else {
+              return {
+                lineStyle: { width: 2, color: s.lineStyle.color, opacity: 0.15 },
+                itemStyle: { ...s.itemStyle, opacity: 0.05 },
+                endLabel: { ...s.endLabel, opacity: 0.15 }
+              };
+            }
+          });
+
+          lapTimeChartInstance.setOption({ series: updatedSeries });
+        }
+      });
+
+      lapTimeChartInstance.on('mouseout', (params) => {
+        if (params.componentType === 'series' && params.seriesType === 'line') {
+          currentHoveredDriver = null;
+
+          const resetSeries = series.map((s, idx) => {
+            if (idx >= driverSeriesCount) return {};
+            return {
+              lineStyle: { width: 2, color: s.lineStyle.color, opacity: 1 },
+              itemStyle: { ...s.itemStyle, opacity: 1 },
+              endLabel: { ...s.endLabel, opacity: 1 }
+            };
+          });
+
+          lapTimeChartInstance.setOption({ series: resetSeries });
+        }
+      });
+    }
+
+    // Handle window resize for lap time chart
+    window.addEventListener('resize', () => {
+      if (lapTimeChartInstance) {
+        lapTimeChartInstance.resize();
+      }
+    });
 
     // Tyre Degradation Panel
     // (Will be populated from tyre_deg.html)
