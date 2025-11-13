@@ -315,7 +315,7 @@
     }
 
     .race-trace-sidebar {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(0, 224, 255, 0.03);
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
@@ -340,18 +340,30 @@
     .race-trace-driver {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 4px 2px;
-      border-radius: 6px;
+      gap: 6px;
+      padding: 4px 8px;
+      margin-bottom: 2px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-color);
+      cursor: pointer;
+      transition: background 0.2s;
     }
 
     .race-trace-driver:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(0, 224, 255, 0.1);
+    }
+
+    .race-trace-driver input[type="checkbox"] {
+      accent-color: var(--accent-color);
+      width: 13px;
+      height: 13px;
+      cursor: pointer;
     }
 
     .race-trace-driver label {
       cursor: pointer;
-      user-select: none;
+      flex: 1;
     }
 
     #raceTraceChart {
