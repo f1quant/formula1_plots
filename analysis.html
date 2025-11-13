@@ -5912,15 +5912,36 @@
         }
 
         // Load strategies of interest if available
+        let strategiesLoaded = false;
         if (config['Strategies Of Interest'] && config['Strategies Of Interest'][0]) {
           const strategies = config['Strategies Of Interest'][0];
           const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-          strategyInputs.forEach((input, index) => {
-            if (index < strategies.length) {
-              input.value = strategies[index];
+
+          // Clear all strategy inputs first
+          strategyInputs.forEach(input => input.value = '');
+
+          // Populate with strategies from config
+          strategies.forEach((strategy, index) => {
+            if (index < strategyInputs.length) {
+              strategyInputs[index].value = strategy;
             }
           });
+          strategiesLoaded = true;
         }
+
+        // Initialize SC probability table
+        const tbody = document.querySelector("#calculatorScProbTable tbody");
+        tbody.innerHTML = "";
+        addCalculatorScProbRow(1, 1, 26.1);
+        addCalculatorScProbRow(2, 2, 4.9);
+        addCalculatorScProbRow(3, 3, 3.3);
+        addCalculatorScProbRow(4, "", 1.6);
+
+        // Seed patterns only if not loaded from config
+        if (!strategiesLoaded) {
+          seedCalculatorPatternsFromFree();
+        }
+        runCalculatorSimulation();
       } else {
         // Default values
         document.getElementById("calculatorPitLoss").value = 21.8;
@@ -5932,19 +5953,19 @@
         document.getElementById("calculatorDegM").value = 0.06;
         document.getElementById("calculatorPaceH").value = 76.5;
         document.getElementById("calculatorDegH").value = 0.02;
+
+        // Initialize SC probability table
+        const tbody = document.querySelector("#calculatorScProbTable tbody");
+        tbody.innerHTML = "";
+        addCalculatorScProbRow(1, 1, 26.1);
+        addCalculatorScProbRow(2, 2, 4.9);
+        addCalculatorScProbRow(3, 3, 3.3);
+        addCalculatorScProbRow(4, "", 1.6);
+
+        // Seed patterns from free optimization (no config available)
+        seedCalculatorPatternsFromFree();
+        runCalculatorSimulation();
       }
-
-      // Initialize SC probability table
-      const tbody = document.querySelector("#calculatorScProbTable tbody");
-      tbody.innerHTML = "";
-      addCalculatorScProbRow(1, 1, 26.1);
-      addCalculatorScProbRow(2, 2, 4.9);
-      addCalculatorScProbRow(3, 3, 3.3);
-      addCalculatorScProbRow(4, "", 1.6);
-
-      // Seed patterns and run simulation
-      seedCalculatorPatternsFromFree();
-      runCalculatorSimulation();
     }
 
     // Set up calculator event listeners
