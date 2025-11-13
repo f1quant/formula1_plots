@@ -704,6 +704,7 @@
     let sessionsByKey = new Map();
     let currentSessionData = null; // Stores filtered data for current session
     let currentActiveTab = 'strategy';
+    let selectedDrivers = new Set(); // Shared driver selection across race trace and lap time panels
 
     // ============================================================================
     // TAB SWITCHING
@@ -772,14 +773,35 @@
           raceTraceLapMax.value = maxLapNum;
           raceTraceLapMin.min = minLapNum;
           raceTraceLapMax.max = maxLapNum;
-          raceTraceSelectedDrivers.clear();
           calculateRaceTraceGaps(sessionData);
           buildRaceTraceDriverList();
+
+          // Auto-select top 5 drivers for new session
+          if (selectedDrivers.size === 0) {
+            const drivers = Object.keys(raceTraceDriverLines);
+            const driverFinishInfo = drivers.map(driver => {
+              const data = raceTraceDriverLines[driver];
+              const maxLapNum = Math.max(...data.laps);
+              const lastLapIndex = data.laps.indexOf(maxLapNum);
+              const lastPosition = data.positions[lastLapIndex];
+              return { driver, maxLapNum, lastPosition };
+            });
+            const sortedDrivers = sortDriversByFinishingOrder(driverFinishInfo);
+            sortedDrivers.slice(0, 5).forEach(({ driver }) => {
+              selectedDrivers.add(driver);
+            });
+          }
+
+          // Update checkboxes to reflect current selection
+          updateRaceTraceDriverCheckboxes();
           renderRaceTraceChart();
           break;
         case 'lap-time':
           // Initialize lap time panel
           lapTimeCurrentSessionRows = sessionData;
+          lapTimeYear = year;
+          lapTimeRound = round;
+          lapTimeSessionType = sessionType;
           lapTimeDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
           lapTimeScheduledLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : null;
           if (isNaN(lapTimeScheduledLaps)) {
@@ -804,9 +826,18 @@
             }
           }
 
-          lapTimeSelectedDrivers.clear();
           const filteredRows = applyLapTimeFilters(sessionData);
           processLapTimeData(filteredRows);
+
+          // Auto-select top 5 drivers for new session (if not already selected)
+          if (selectedDrivers.size === 0 && lapTimeCurrentGroups.size > 0) {
+            const drivers = Array.from(lapTimeCurrentGroups.keys());
+            const top5 = drivers.slice(0, Math.min(5, drivers.length));
+            top5.forEach(driver => selectedDrivers.add(driver));
+            // Re-render to show the selected drivers
+            buildLapTimeDriversList(drivers);
+            renderLapTimeChart();
+          }
           break;
         case 'tyre-deg':
           // Initialize tyre deg panel
@@ -943,6 +974,9 @@
                String(r.meeting_name || "").trim() === meeting &&
                String(r.session_type || "").trim() === selectedSession;
       });
+
+      // Clear selected drivers when a new session is selected
+      selectedDrivers.clear();
 
       // Initialize the currently active panel with new data
       if (currentSessionData.length > 0) {
@@ -1164,7 +1198,6 @@
     const raceTraceDebugInfo = document.getElementById('raceTraceDebugInfo');
 
     let raceTraceDriverLines = {};
-    let raceTraceSelectedDrivers = new Set();
     let raceTraceChart = null;
     let raceTraceCurrentSessionRows = [];
     let raceTraceDriverColors = new Map();
@@ -1174,13 +1207,14 @@
 
     // Set up race trace event listeners
     raceTraceBtnAll.addEventListener('click', () => {
-      raceTraceSelectedDrivers = new Set(Object.keys(raceTraceDriverLines));
+      selectedDrivers.clear();
+      Object.keys(raceTraceDriverLines).forEach(d => selectedDrivers.add(d));
       updateRaceTraceDriverCheckboxes();
       renderRaceTraceChart();
     });
 
     raceTraceBtnNone.addEventListener('click', () => {
-      raceTraceSelectedDrivers.clear();
+      selectedDrivers.clear();
       updateRaceTraceDriverCheckboxes();
       renderRaceTraceChart();
     });
@@ -1254,14 +1288,6 @@
 
       const sortedDriverFinishInfo = sortDriversByFinishingOrder(driverFinishInfo);
 
-      const isNewSession = raceTraceSelectedDrivers.size === 0;
-      if (isNewSession) {
-        raceTraceSelectedDrivers.clear();
-        sortedDriverFinishInfo.slice(0, 5).forEach(({ driver }) => {
-          raceTraceSelectedDrivers.add(driver);
-        });
-      }
-
       sortedDriverFinishInfo.forEach(({ driver }) => {
         const div = document.createElement('div');
         div.className = 'race-trace-driver';
@@ -1269,18 +1295,22 @@
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = `race-trace-driver-${driver}`;
-        checkbox.checked = raceTraceSelectedDrivers.has(driver);
+        checkbox.checked = selectedDrivers.has(driver);
 
         const info = getDriverInfo(driver);
         checkbox.style.accentColor = info.color;
 
         checkbox.addEventListener('change', (e) => {
           if (e.target.checked) {
-            raceTraceSelectedDrivers.add(driver);
+            selectedDrivers.add(driver);
           } else {
-            raceTraceSelectedDrivers.delete(driver);
+            selectedDrivers.delete(driver);
           }
           renderRaceTraceChart();
+          // Also update lap time chart if it has data
+          if (lapTimeCurrentGroups.size > 0) {
+            renderLapTimeChart();
+          }
         });
 
         const label = document.createElement('label');
@@ -1301,7 +1331,7 @@
       Object.keys(raceTraceDriverLines).forEach(driver => {
         const checkbox = document.getElementById(`race-trace-driver-${driver}`);
         if (checkbox) {
-          checkbox.checked = raceTraceSelectedDrivers.has(driver);
+          checkbox.checked = selectedDrivers.has(driver);
         }
       });
     }
@@ -1457,7 +1487,7 @@
 
       // Calculate gaps by lap for scaling
       const gapsByLap = new Map();
-      raceTraceSelectedDrivers.forEach(driver => {
+      selectedDrivers.forEach(driver => {
         const data = raceTraceDriverLines[driver];
         if (!data) return;
         for (let i = 0; i < data.laps.length; i++) {
@@ -1478,7 +1508,7 @@
       const lapCount = Math.max(...Object.values(raceTraceDriverLines).map(d => Math.max(...d.laps)));
       const rightX = (maxLap === lapCount) ? (maxLap + 0.5) : (maxLap + 0.1);
 
-      raceTraceSelectedDrivers.forEach(driver => {
+      selectedDrivers.forEach(driver => {
         const data = raceTraceDriverLines[driver];
         if (!data) return;
 
@@ -1726,11 +1756,13 @@
     const tyreLifeAdjustToggle = document.getElementById('tyreLifeAdjustToggle');
 
     let lapTimeChartInstance = null;
-    let lapTimeSelectedDrivers = new Set();
     let lapTimeCurrentGroups = new Map();
     let lapTimeDriverColors = new Map();
     let lapTimeScheduledLaps = null;
     let lapTimeCurrentSessionRows = [];
+    let lapTimeYear = '';
+    let lapTimeRound = '';
+    let lapTimeSessionType = '';
     let circuitConfig = {};
 
     // Load circuit config
@@ -1746,6 +1778,15 @@
     }
 
     loadCircuitConfig();
+
+    function getLapTimeDriverInfo(code) {
+      // Get driver info for current session with proper parameters
+      if (!lapTimeYear || !lapTimeRound || !lapTimeSessionType) {
+        return { fullName: code, color: '#888888', teamName: '', headshotUrl: '' };
+      }
+
+      return DriverInfo.getDriverInfo(code, lapTimeYear, lapTimeRound, lapTimeSessionType);
+    }
 
     // Set up lap time filter listeners
     function setupLapTimeFilterListeners() {
@@ -1915,11 +1956,6 @@
 
       const drivers = sortedDrivers.map(d => d.driver);
 
-      if (lapTimeSelectedDrivers.size === 0 && drivers.length > 0) {
-        const top5 = drivers.slice(0, Math.min(5, drivers.length));
-        top5.forEach(driver => lapTimeSelectedDrivers.add(driver));
-      }
-
       buildLapTimeDriversList(drivers);
       renderLapTimeChart();
     }
@@ -1936,24 +1972,31 @@
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = driver;
-        checkbox.checked = lapTimeSelectedDrivers.has(driver);
+        checkbox.checked = selectedDrivers.has(driver);
 
-        const driverColor = lapTimeDriverColors.get(driver) || 'var(--accent-color)';
-        checkbox.style.accentColor = driverColor;
+        const info = getLapTimeDriverInfo(driver);
+        checkbox.style.accentColor = info.color;
 
         checkbox.addEventListener('change', (e) => {
           if (e.target.checked) {
-            lapTimeSelectedDrivers.add(driver);
+            selectedDrivers.add(driver);
           } else {
-            lapTimeSelectedDrivers.delete(driver);
+            selectedDrivers.delete(driver);
           }
           renderLapTimeChart();
+          // Also update race trace chart if it has data
+          if (Object.keys(raceTraceDriverLines).length > 0) {
+            renderRaceTraceChart();
+          }
         });
 
         const label = document.createElement('label');
-        label.textContent = driver;
+
+        // Format: "Full Name (ABB)"
+        const displayName = info.fullName ? `${info.fullName} (${driver})` : driver;
+        label.textContent = displayName;
         label.style.cursor = 'pointer';
-        label.style.color = driverColor;
+        label.style.color = info.color;
 
         wrapper.appendChild(checkbox);
         wrapper.appendChild(label);
@@ -2003,7 +2046,7 @@
       let seriesIdx = 0;
 
       lapTimeCurrentGroups.forEach((stints, driver) => {
-        if (!lapTimeSelectedDrivers.has(driver)) return;
+        if (!selectedDrivers.has(driver)) return;
 
         const stintArray = Array.from(stints.entries()).sort((a, b) => {
           return parseInt(a[0]) - parseInt(b[0]);
