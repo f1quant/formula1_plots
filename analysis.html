@@ -1148,12 +1148,34 @@
 
           // Add tooltip
           segment.addEventListener('mouseenter', (e) => {
-            const tyreAgeText = !isNaN(stint.startTyreLife) ? `<br/>Tyre age at start: ${stint.startTyreLife} laps` : '';
-            tooltip.innerHTML = `
-              <strong>${data.driver}</strong><br/>
-              Stint ${idx + 1}: ${stint.compound}<br/>
-              Laps ${stint.startLap}-${stint.endLap} (${stintLaps} laps)${tyreAgeText}
-            `;
+            const info = DriverInfo.getDriverInfo(data.driver, year, round, sessionType);
+            const tyreAgeText = !isNaN(stint.startTyreLife) ? `Tyre age at start: ${stint.startTyreLife} laps` : '';
+
+            if (info && info.headshotUrl) {
+              const fullName = info.fullName || data.driver;
+              const teamName = info.teamName || '';
+              const stintInfo = `
+                <div style="margin-top:4px">Stint ${idx + 1}: ${stint.compound}</div>
+                <div>Laps ${stint.startLap}-${stint.endLap} (${stintLaps} laps)</div>
+                ${tyreAgeText ? `<div>${tyreAgeText}</div>` : ''}
+              `;
+              tooltip.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px;min-width:220px;">
+                  <img src="${info.headshotUrl}" alt="${fullName}" width="50" height="50" style="border-radius:50%;object-fit:cover;border:1px solid #2a2f3a;flex:0 0 auto" />
+                  <div style="line-height:1.25">
+                    <div style="font-weight:600">${fullName} <span style="color:#8b8b8b">(${data.driver})</span></div>
+                    ${teamName ? `<div style="color:#8b8b8b;font-size:12px">${teamName}</div>` : ''}
+                    ${stintInfo}
+                  </div>
+                </div>
+              `;
+            } else {
+              tooltip.innerHTML = `
+                <strong>${data.driver}</strong><br/>
+                Stint ${idx + 1}: ${stint.compound}<br/>
+                Laps ${stint.startLap}-${stint.endLap} (${stintLaps} laps)${tyreAgeText ? `<br/>${tyreAgeText}` : ''}
+              `;
+            }
             tooltip.classList.add('show');
             updateTooltipPosition(e);
           });
