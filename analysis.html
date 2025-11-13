@@ -744,6 +744,79 @@
     .stint-selected {
       background: rgba(0, 224, 255, 0.15) !important;
     }
+
+    .clickable-header {
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+
+    .clickable-header::after {
+      content: " ▾";
+      font-size: 10px;
+      opacity: 0.6;
+    }
+
+    .header-dropdown {
+      position: absolute;
+      background: #0a0c14;
+      border: 1px solid var(--accent-color);
+      border-radius: 8px;
+      padding: 8px;
+      min-width: 200px;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 0 16px var(--accent-soft);
+      z-index: 1000;
+      display: none;
+    }
+
+    #tyreDegStintsTable {
+      position: relative;
+    }
+
+    .header-dropdown.show {
+      display: block;
+    }
+
+    .dropdown-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      font-size: 11px;
+      color: var(--text-color);
+      border-bottom: 1px solid rgba(148, 163, 253, 0.1);
+    }
+
+    .dropdown-option:last-child {
+      border-bottom: none;
+    }
+
+    .dropdown-option-label {
+      flex: 1;
+    }
+
+    .dropdown-option-buttons {
+      display: flex;
+      gap: 4px;
+    }
+
+    .dropdown-btn {
+      padding: 2px 8px;
+      font-size: 9px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background: rgba(0, 0, 0, 0.3);
+      color: var(--text-color);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .dropdown-btn:hover {
+      border-color: var(--accent-color);
+      background: rgba(0, 224, 255, 0.15);
+    }
   </style>
 </head>
 <body>
@@ -2754,6 +2827,10 @@
     let scatterStintToPoint = new Map(); // stint key -> {seriesIndex, dataIndex} in scatter chart
     let lapTimeStintToSeriesIndex = new Map(); // stint key -> series index in lap time chart
 
+    // Dropdown menu tracking
+    let activeTyreDegDropdown = null;
+    let activeTyreDegDropdownColumn = null;
+
     // Load tyre choices
     function loadTyreDegTyreChoices() {
       ParsedDataCache.loadCSV("tyre_choices.csv", {
@@ -2824,6 +2901,15 @@
     }
 
     setupTyreDegFilterListeners();
+
+    // Set up document-level click listener for closing dropdowns
+    document.addEventListener('click', function(e) {
+      if (activeTyreDegDropdown && !e.target.closest('.clickable-header') && !e.target.closest('.header-dropdown')) {
+        activeTyreDegDropdown.remove();
+        activeTyreDegDropdown = null;
+        activeTyreDegDropdownColumn = null;
+      }
+    });
 
     function applyTyreDegFilters(rows) {
       const lapsToDiscard = parseInt(document.getElementById('tyreDegFilterMinLap').value) || 0;
@@ -3035,12 +3121,45 @@
       // Header row
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
-      ['Select', 'Event', 'Driver', 'Session Type', 'Stint', 'Lap Count', 'Sched Laps', 'Compound',
-       'Finish Status', 'Min Tyre Life', 'Laps to Go', 'Deg', 'Pace', 'Correlation', 'RMSE'].forEach(text => {
+
+      const headers = [
+        { text: 'Select', isCheckbox: true },
+        { text: 'Event' },
+        { text: 'Driver', clickable: true, column: 'driver' },
+        { text: 'Session Type', clickable: true, column: 'session_type' },
+        { text: 'Stint' },
+        { text: 'Lap Count' },
+        { text: 'Sched Laps' },
+        { text: 'Compound', clickable: true, column: 'compound' },
+        { text: 'Finish Status' },
+        { text: 'Min Tyre Life' },
+        { text: 'Laps to Go' },
+        { text: 'Deg' },
+        { text: 'Pace' },
+        { text: 'Correlation' },
+        { text: 'RMSE' }
+      ];
+
+      headers.forEach(header => {
         const th = document.createElement('th');
-        th.textContent = text;
+
+        if (header.isCheckbox) {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = 'tyreDegSelectAllCheckbox';
+          checkbox.className = 'stint-checkbox';
+          th.appendChild(checkbox);
+        } else if (header.clickable) {
+          th.textContent = header.text;
+          th.className = 'clickable-header';
+          th.dataset.column = header.column;
+        } else {
+          th.textContent = header.text;
+        }
+
         headerRow.appendChild(th);
       });
+
       thead.appendChild(headerRow);
       table.appendChild(thead);
 
@@ -3192,6 +3311,166 @@
       table.appendChild(tbody);
       tyreDegStintsTableContainer.innerHTML = '';
       tyreDegStintsTableContainer.appendChild(table);
+
+      // Attach select all checkbox listener
+      const selectAllCheckbox = document.getElementById('tyreDegSelectAllCheckbox');
+      if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+          if (this.checked) {
+            // Select all visible stints
+            tyreDegFilteredGroups.forEach((group, key) => {
+              tyreDegSelectedStints.add(key);
+            });
+          } else {
+            // Deselect all visible stints
+            tyreDegFilteredGroups.forEach((group, key) => {
+              tyreDegSelectedStints.delete(key);
+            });
+          }
+          renderTyreDegStintsTable();
+          renderTyreDegScatterChart();
+          renderTyreDegLapTimeChart();
+        });
+
+        // Update select all checkbox state
+        let visibleSelectedCount = 0;
+        tyreDegFilteredGroups.forEach((group, key) => {
+          if (tyreDegSelectedStints.has(key)) visibleSelectedCount++;
+        });
+
+        selectAllCheckbox.checked = tyreDegFilteredGroups.size > 0 &&
+          visibleSelectedCount === tyreDegFilteredGroups.size;
+        selectAllCheckbox.indeterminate = visibleSelectedCount > 0 &&
+          visibleSelectedCount < tyreDegFilteredGroups.size;
+      }
+
+      // Attach clickable header listeners
+      attachTyreDegHeaderDropdownListeners();
+    }
+
+    function attachTyreDegHeaderDropdownListeners() {
+      document.querySelectorAll('#tyreDegStintsTable .clickable-header').forEach(header => {
+        const newHeader = header.cloneNode(true);
+        header.parentNode.replaceChild(newHeader, header);
+
+        newHeader.addEventListener('click', function(e) {
+          e.stopPropagation();
+
+          const column = this.dataset.column;
+
+          // Toggle: if clicking same header, close dropdown
+          if (activeTyreDegDropdown && activeTyreDegDropdownColumn === column) {
+            activeTyreDegDropdown.remove();
+            activeTyreDegDropdown = null;
+            activeTyreDegDropdownColumn = null;
+            return;
+          }
+
+          // Close any existing dropdown
+          if (activeTyreDegDropdown) {
+            activeTyreDegDropdown.remove();
+            activeTyreDegDropdown = null;
+          }
+
+          const table = this.closest('table');
+          const tableRect = table.getBoundingClientRect();
+          const headerRect = this.getBoundingClientRect();
+
+          // Get unique values for this column
+          const uniqueValues = new Set();
+          tyreDegFilteredGroups.forEach((group, key) => {
+            if (column === 'driver') {
+              uniqueValues.add(group.lap_Driver);
+            } else if (column === 'session_type') {
+              uniqueValues.add(group.session_type);
+            } else if (column === 'compound') {
+              uniqueValues.add(group.compound);
+            }
+          });
+
+          // Create dropdown
+          const dropdown = document.createElement('div');
+          dropdown.className = 'header-dropdown show';
+
+          // Position relative to the header
+          dropdown.style.left = `${headerRect.left - tableRect.left}px`;
+          dropdown.style.top = `${headerRect.bottom - tableRect.top}px`;
+
+          // Add options
+          Array.from(uniqueValues).sort().forEach(value => {
+            const option = document.createElement('div');
+            option.className = 'dropdown-option';
+
+            const label = document.createElement('span');
+            label.className = 'dropdown-option-label';
+            label.textContent = value;
+
+            const buttons = document.createElement('div');
+            buttons.className = 'dropdown-option-buttons';
+
+            const selectBtn = document.createElement('button');
+            selectBtn.className = 'dropdown-btn';
+            selectBtn.textContent = 'Select';
+            selectBtn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              selectTyreDegByValue(column, value, true);
+            });
+
+            const deselectBtn = document.createElement('button');
+            deselectBtn.className = 'dropdown-btn';
+            deselectBtn.textContent = 'Clear';
+            deselectBtn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              selectTyreDegByValue(column, value, false);
+            });
+
+            buttons.appendChild(selectBtn);
+            buttons.appendChild(deselectBtn);
+
+            option.appendChild(label);
+            option.appendChild(buttons);
+            dropdown.appendChild(option);
+          });
+
+          table.appendChild(dropdown);
+          activeTyreDegDropdown = dropdown;
+          activeTyreDegDropdownColumn = column;
+        });
+      });
+    }
+
+    function selectTyreDegByValue(column, value, select) {
+      tyreDegFilteredGroups.forEach((group, key) => {
+        let matches = false;
+
+        if (column === 'driver' && group.lap_Driver === value) {
+          matches = true;
+        } else if (column === 'session_type' && group.session_type === value) {
+          matches = true;
+        } else if (column === 'compound' && group.compound === value) {
+          matches = true;
+        }
+
+        if (matches) {
+          if (select) {
+            tyreDegSelectedStints.add(key);
+          } else {
+            tyreDegSelectedStints.delete(key);
+          }
+        }
+      });
+
+      // Close the dropdown
+      if (activeTyreDegDropdown) {
+        activeTyreDegDropdown.remove();
+        activeTyreDegDropdown = null;
+        activeTyreDegDropdownColumn = null;
+      }
+
+      // Refresh table and charts
+      renderTyreDegStintsTable();
+      renderTyreDegScatterChart();
+      renderTyreDegLapTimeChart();
     }
 
     function renderTyreDegScatterChart() {
@@ -3309,7 +3588,6 @@
             ];
 
             series.push({
-              name: `${compound} fit`,
               type: 'line',
               data: lineData,
               lineStyle: {
@@ -3322,7 +3600,6 @@
               blur: { lineStyle: { opacity: 0.15 } },
               silent: true,
               animation: false,
-              legend: false,  // Hide from legend but keep visible on chart
               zlevel: -1
             });
           }
