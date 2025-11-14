@@ -1639,19 +1639,19 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>Softs</td>
-                  <td><input type="number" id="calculatorPaceS" class="calculator-field-input" step="0.001" /></td>
-                  <td><input type="number" id="calculatorDegS" class="calculator-field-input" step="0.001" /></td>
+                  <td>Hard</td>
+                  <td><input type="number" id="calculatorPaceH" class="calculator-field-input" step="0.001" /></td>
+                  <td><input type="number" id="calculatorDegH" class="calculator-field-input" step="0.001" /></td>
                 </tr>
                 <tr>
-                  <td>Mediums</td>
+                  <td>Medium</td>
                   <td><input type="number" id="calculatorPaceM" class="calculator-field-input" step="0.001" /></td>
                   <td><input type="number" id="calculatorDegM" class="calculator-field-input" step="0.001" /></td>
                 </tr>
                 <tr>
-                  <td>Hards</td>
-                  <td><input type="number" id="calculatorPaceH" class="calculator-field-input" step="0.001" /></td>
-                  <td><input type="number" id="calculatorDegH" class="calculator-field-input" step="0.001" /></td>
+                  <td>Soft</td>
+                  <td><input type="number" id="calculatorPaceS" class="calculator-field-input" step="0.001" /></td>
+                  <td><input type="number" id="calculatorDegS" class="calculator-field-input" step="0.001" /></td>
                 </tr>
               </tbody>
             </table>
@@ -7522,7 +7522,9 @@
       saveToState('paceModel.fuelEffect', value);
       // Sync to lap time tab
       const fuelEffectInput = document.getElementById('fuelEffect');
+      const fuelEffectValue = document.getElementById('fuelEffectValue');
       if (fuelEffectInput) fuelEffectInput.value = value;
+      if (fuelEffectValue) fuelEffectValue.textContent = value.toFixed(3);
       // Sync to tyre deg slider
       const tyreDegFuelEffectSlider = document.getElementById('tyreDegFuelEffectSlider');
       const tyreDegFuelEffectValue = document.getElementById('tyreDegFuelEffectValue');
@@ -7543,21 +7545,27 @@
       saveToState('paceModel.degSoft', value);
       // Sync to lap time tab
       const degSoft = document.getElementById('degSoft');
+      const degSoftValue = document.getElementById('degSoftValue');
       if (degSoft) degSoft.value = value;
+      if (degSoftValue) degSoftValue.textContent = value.toFixed(3);
     });
     document.getElementById('calculatorDegM').addEventListener('input', function() {
       const value = parseFloat(this.value) || 0.08;
       saveToState('paceModel.degMedium', value);
       // Sync to lap time tab
       const degMedium = document.getElementById('degMedium');
+      const degMediumValue = document.getElementById('degMediumValue');
       if (degMedium) degMedium.value = value;
+      if (degMediumValue) degMediumValue.textContent = value.toFixed(3);
     });
     document.getElementById('calculatorDegH').addEventListener('input', function() {
       const value = parseFloat(this.value) || 0.05;
       saveToState('paceModel.degHard', value);
       // Sync to lap time tab
       const degHard = document.getElementById('degHard');
+      const degHardValue = document.getElementById('degHardValue');
       if (degHard) degHard.value = value;
+      if (degHardValue) degHardValue.textContent = value.toFixed(3);
     });
 
     // Save strategy inputs to state
