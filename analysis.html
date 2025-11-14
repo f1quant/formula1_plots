@@ -813,6 +813,51 @@
       position: relative;
     }
 
+    #lapTimeSummaryTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-top: 16px;
+    }
+
+    #lapTimeSummaryTable th {
+      background: rgba(0, 224, 255, 0.1);
+      color: var(--accent-color);
+      padding: 8px 10px;
+      text-align: left;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    #lapTimeSummaryTable th:first-child {
+      text-align: left;
+    }
+
+    #lapTimeSummaryTable th:not(:first-child) {
+      text-align: center;
+    }
+
+    #lapTimeSummaryTable td {
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+    }
+
+    #lapTimeSummaryTable tr:hover {
+      background: rgba(0, 224, 255, 0.05);
+    }
+
+    #lapTimeSummaryTable tbody tr:first-child {
+      background: rgba(0, 224, 255, 0.15);
+    }
+
+    #lapTimeSummaryTable tbody tr:first-child:hover {
+      background: rgba(0, 224, 255, 0.2);
+    }
+
     .header-dropdown.show {
       display: block;
     }
@@ -1349,6 +1394,8 @@
           </div>
         </div>
       </div>
+
+      <div id="lapTimeSummaryTableContainer" style="margin-top: 16px;"></div>
     </div>
 
     <!-- Tyre Degradation Panel -->
@@ -2114,6 +2161,7 @@
             const drivers = Array.from(lapTimeCurrentGroups.keys());
             buildLapTimeDriversList(drivers);
             renderLapTimeChart();
+            renderLapTimeSummaryTable();
           }
           break;
         case 'tyre-deg':
@@ -2701,6 +2749,7 @@
           // Also update lap time chart if it has data
           if (lapTimeCurrentGroups.size > 0) {
             renderLapTimeChart();
+            renderLapTimeSummaryTable();
           }
         });
 
@@ -3221,12 +3270,14 @@
         this.classList.toggle('active');
         saveToState('lapTime.fuelAdjust', this.classList.contains('active'));
         renderLapTimeChart();
+        renderLapTimeSummaryTable();
       });
 
       tyreLifeAdjustToggle.addEventListener('click', function() {
         this.classList.toggle('active');
         saveToState('lapTime.tyreLifeAdjust', this.classList.contains('active'));
         renderLapTimeChart();
+        renderLapTimeSummaryTable();
       });
 
       // Copy data button
@@ -3247,6 +3298,7 @@
     function onLapTimeAdjustmentChange() {
       if (lapTimeCurrentGroups.size > 0) {
         renderLapTimeChart();
+        renderLapTimeSummaryTable();
       }
     }
 
@@ -3433,6 +3485,7 @@
         lapTimeSelectedDrivers.clear();
         buildLapTimeDriversList([]);
         renderLapTimeChart();
+        renderLapTimeSummaryTable();
         return;
       }
 
@@ -3494,6 +3547,7 @@
 
       buildLapTimeDriversList(drivers);
       renderLapTimeChart();
+      renderLapTimeSummaryTable();
     }
 
     function buildLapTimeDriversList(drivers) {
@@ -3524,6 +3578,7 @@
           saveToState('raceTrace.selectedDrivers', drivers);
           saveToState('lapTime.selectedDrivers', drivers);
           renderLapTimeChart();
+          renderLapTimeSummaryTable();
           // Also update race trace chart if it has data
           if (Object.keys(raceTraceDriverLines).length > 0) {
             renderRaceTraceChart();
@@ -3892,6 +3947,222 @@
           lapTimeChartInstance.setOption({ series: resetSeries });
         }
       });
+    }
+
+    function renderLapTimeSummaryTable() {
+      const container = document.getElementById('lapTimeSummaryTableContainer');
+
+      if (lapTimeCurrentGroups.size === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      // Get adjustment settings
+      const fuelAdjusted = fuelAdjustToggle.classList.contains('active');
+      const tyreLifeAdjusted = tyreLifeAdjustToggle.classList.contains('active');
+      const fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0;
+      const degHard = parseFloat(document.getElementById('degHard').value) || 0;
+      const degMedium = parseFloat(document.getElementById('degMedium').value) || 0;
+      const degSoft = parseFloat(document.getElementById('degSoft').value) || 0;
+
+      const degradationMap = {
+        'HARD': degHard,
+        'MEDIUM': degMedium,
+        'SOFT': degSoft
+      };
+
+      // Process data: group by driver and compound, calculate averages
+      const driverCompoundData = new Map(); // driver -> { SOFT: [times], MEDIUM: [times], HARD: [times] }
+      const compoundLapCounts = { 'SOFT': 0, 'MEDIUM': 0, 'HARD': 0 };
+
+      lapTimeCurrentGroups.forEach((stints, driver) => {
+        if (!driverCompoundData.has(driver)) {
+          driverCompoundData.set(driver, {});
+        }
+        const driverData = driverCompoundData.get(driver);
+
+        stints.forEach((stintData, stintNumber) => {
+          const compound = stintData.compound.toUpperCase();
+          if (!['SOFT', 'MEDIUM', 'HARD'].includes(compound)) return;
+
+          if (!driverData[compound]) {
+            driverData[compound] = [];
+          }
+
+          stintData.laps.forEach(lap => {
+            let adjustedLapTime = lap.lapTime;
+
+            if (fuelAdjusted && !isNaN(lap.schedLaps)) {
+              adjustedLapTime -= (lap.schedLaps - lap.lapNumber) * fuelEffect;
+            }
+
+            if (tyreLifeAdjusted && !isNaN(lap.tyreLife)) {
+              const tyreDeg = degradationMap[compound] || 0;
+              adjustedLapTime -= lap.tyreLife * tyreDeg;
+            }
+
+            driverData[compound].push(adjustedLapTime);
+            compoundLapCounts[compound]++;
+          });
+        });
+      });
+
+      // Calculate averages for each driver-compound combination
+      const driverAverages = new Map(); // driver -> { SOFT: avg, MEDIUM: avg, HARD: avg }
+      driverCompoundData.forEach((compoundData, driver) => {
+        const averages = {};
+        Object.keys(compoundData).forEach(compound => {
+          const times = compoundData[compound];
+          if (times.length > 0) {
+            averages[compound] = times.reduce((a, b) => a + b, 0) / times.length;
+          }
+        });
+        driverAverages.set(driver, averages);
+      });
+
+      // Determine reference compound (compound with most laps total across all drivers)
+      let referenceCompound = 'MEDIUM';
+      let maxLaps = 0;
+      Object.keys(compoundLapCounts).forEach(compound => {
+        if (compoundLapCounts[compound] > maxLaps) {
+          maxLaps = compoundLapCounts[compound];
+          referenceCompound = compound;
+        }
+      });
+
+      // Build table
+      const table = document.createElement('table');
+      table.id = 'lapTimeSummaryTable';
+
+      // Header row
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+
+      ['Driver', 'SOFT', 'MEDIUM', 'HARD'].forEach((text, index) => {
+        const th = document.createElement('th');
+
+        if (index > 0) {
+          th.textContent = text;
+          if (text === referenceCompound) {
+            th.textContent += ' (ref)';
+          }
+          th.style.color = getF1TireColor(text);
+        } else {
+          th.textContent = text;
+        }
+
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Body
+      const tbody = document.createElement('tbody');
+
+      // Average row at top
+      const avgRow = document.createElement('tr');
+
+      const avgDriverCell = document.createElement('td');
+      avgDriverCell.textContent = 'Average';
+      avgDriverCell.style.color = 'var(--accent-color)';
+      avgDriverCell.style.fontWeight = '600';
+      avgRow.appendChild(avgDriverCell);
+
+      ['SOFT', 'MEDIUM', 'HARD'].forEach(compound => {
+        const td = document.createElement('td');
+        td.style.textAlign = 'center';
+        td.style.fontWeight = '600';
+
+        // Calculate average for selected drivers only
+        const values = [];
+        lapTimeDriverOrder.forEach(({ driver }) => {
+          if (!selectedDrivers.has(driver)) return;
+          const driverData = driverAverages.get(driver);
+          if (driverData && driverData[compound] !== undefined) {
+            values.push(driverData[compound]);
+          }
+        });
+
+        if (values.length > 0) {
+          const avg = values.reduce((a, b) => a + b, 0) / values.length;
+
+          // Calculate reference average for delta
+          const refValues = [];
+          lapTimeDriverOrder.forEach(({ driver }) => {
+            if (!selectedDrivers.has(driver)) return;
+            const driverData = driverAverages.get(driver);
+            if (driverData && driverData[referenceCompound] !== undefined) {
+              refValues.push(driverData[referenceCompound]);
+            }
+          });
+          const refAvg = refValues.length > 0 ? refValues.reduce((a, b) => a + b, 0) / refValues.length : 0;
+
+          let text = avg.toFixed(3);
+          if (compound !== referenceCompound && refAvg > 0) {
+            const delta = avg - refAvg;
+            const deltaStr = delta >= 0 ? `+${delta.toFixed(3)}` : delta.toFixed(3);
+            text += ` (${deltaStr})`;
+          }
+          td.textContent = text;
+        } else {
+          td.textContent = '-';
+          td.style.color = 'var(--muted-color)';
+        }
+
+        avgRow.appendChild(td);
+      });
+
+      tbody.appendChild(avgRow);
+
+      // Driver rows (in finishing order)
+      lapTimeDriverOrder.forEach(({ driver }) => {
+        if (!driverAverages.has(driver)) return; // Skip drivers with no data
+
+        const tr = document.createElement('tr');
+
+        // Driver name cell
+        const driverCell = document.createElement('td');
+        driverCell.textContent = driver;
+        const driverColor = lapTimeDriverColors.get(driver) || '#888888';
+        driverCell.style.color = driverColor;
+        driverCell.style.fontWeight = '600';
+        tr.appendChild(driverCell);
+
+        // Compound cells
+        const driverData = driverAverages.get(driver);
+        const isSelected = selectedDrivers.has(driver);
+
+        ['SOFT', 'MEDIUM', 'HARD'].forEach(compound => {
+          const td = document.createElement('td');
+          td.style.textAlign = 'center';
+
+          // Show dash if driver not selected or no data for this compound
+          if (!isSelected || driverData[compound] === undefined) {
+            td.textContent = '-';
+            td.style.color = 'var(--muted-color)';
+          } else {
+            const avg = driverData[compound];
+            const refAvg = driverData[referenceCompound];
+
+            let text = avg.toFixed(3);
+            if (compound !== referenceCompound && refAvg !== undefined) {
+              const delta = avg - refAvg;
+              const deltaStr = delta >= 0 ? `+${delta.toFixed(3)}` : delta.toFixed(3);
+              text += ` (${deltaStr})`;
+            }
+            td.textContent = text;
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      container.innerHTML = '';
+      container.appendChild(table);
     }
 
     // Handle window resize for lap time chart
