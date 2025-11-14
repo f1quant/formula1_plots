@@ -5037,7 +5037,7 @@
             stintsToKeep.add(key);
           }
         });
-        
+
         tyreDegSelectedStints.clear();
         stintsToKeep.forEach(key => tyreDegSelectedStints.add(key));
       }
@@ -5966,6 +5966,7 @@
     let fuelEffectChart = null; // ECharts instance
     let fuelEffectSelectedRows = new Set(); // Track which rows are selected for plotting
     let fuelEffectFilteredGroups = new Map(); // Store filtered groups for context menu filtering
+    let fuelEffectPreviousFilteredKeys = []; // Remember which keys were visible last time
     let activeFuelEffectDropdown = null;
     let activeFuelEffectDropdownColumn = null;
 
@@ -6381,6 +6382,7 @@
 
     function displayFuelEffectGroupsTable(rows) {
       if (!rows.length) {
+        fuelEffectPreviousFilteredKeys = []; // nothing visible now
         fuelEffectGroupsTableContainer.innerHTML = "";
         fuelEffectChartContainer.style.display = 'none';
         fuelEffectCoefficientsContainer.style.display = 'none';
@@ -6444,6 +6446,18 @@
         return groupA.tyreLife - groupB.tyreLife;
       });
 
+      // Detect and auto-select newly visible rows
+      const currentKeys = sortedGroups.map(([key]) => key);
+      const previousKeysSet = new Set(fuelEffectPreviousFilteredKeys || []);
+
+      currentKeys.forEach(key => {
+        const isNew = !previousKeysSet.has(key);
+        if (isNew && !fuelEffectSelectedRows.has(key)) {
+          // New row that just appeared because of filters -> auto-select it
+          fuelEffectSelectedRows.add(key);
+        }
+      });
+
       // Store filtered groups
       fuelEffectFilteredGroups.clear();
       sortedGroups.forEach(([key, group]) => {
@@ -6459,6 +6473,9 @@
         }
       });
       staleKeys.forEach(key => fuelEffectSelectedRows.delete(key));
+
+      // Remember current keys so we can detect new rows on the next render
+      fuelEffectPreviousFilteredKeys = Array.from(validKeys);
 
       // Render scatter plot with selected rows
       renderFuelEffectScatterPlot(sortedGroups);
