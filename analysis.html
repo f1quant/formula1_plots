@@ -1314,8 +1314,8 @@
         <div class="lap-time-chart-wrapper">
           <div class="lap-time-controls">
             <div class="lap-time-controls-left">
-              <button id="fuelAdjustToggle" class="toggle-button">Fuel Adjusted</button>
-              <button id="tyreLifeAdjustToggle" class="toggle-button">Tyre Life Adjusted</button>
+              <button id="fuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
+              <button id="tyreLifeAdjustToggle" class="toggle-button active">Tyre Life Adjusted</button>
             </div>
             <button id="copyLapTimeDataBtn" class="copy-data-button">Copy Data</button>
           </div>
@@ -1746,8 +1746,8 @@
 
       // Lap Time tab
       lapTime: {
-        fuelAdjust: false,
-        tyreLifeAdjust: false,
+        fuelAdjust: true,
+        tyreLifeAdjust: true,
         selectedDrivers: [] // Array of driver names (data-dependent)
       },
 
