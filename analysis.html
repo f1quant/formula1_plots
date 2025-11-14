@@ -1270,12 +1270,16 @@
           <div class="filters-title">Lap Filters</div>
           <div class="filters-grid">
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at Start</div>
+              <div class="filter-label">Laps to Discard at Start of Race</div>
               <input type="number" id="filterMinLap" value="1" min="0">
             </div>
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at End</div>
+              <div class="filter-label">Laps to Discard at End of Race</div>
               <input type="number" id="filterEndLaps" value="1" min="0">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Laps to Discard at Start of Stint</div>
+              <input type="number" id="filterMinStintLap" value="0" min="0">
             </div>
             <div class="filter-item">
               <div class="filter-label">Min Distance to Car Ahead</div>
@@ -1356,12 +1360,16 @@
               </div>
             </div>
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at Start</div>
+              <div class="filter-label">Laps to Discard at Start of Race</div>
               <input type="number" id="tyreDegFilterMinLap" value="1" min="0">
             </div>
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at End</div>
+              <div class="filter-label">Laps to Discard at End of Race</div>
               <input type="number" id="tyreDegFilterEndLaps" value="1" min="0">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Laps to Discard at Start of Stint</div>
+              <input type="number" id="tyreDegFilterMinStintLap" value="0" min="0">
             </div>
             <div class="filter-item">
               <div class="filter-label">Min Distance to Car Ahead</div>
@@ -1425,12 +1433,16 @@
           <div class="filters-title">Lap Filters</div>
           <div class="filters-grid">
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at Start</div>
+              <div class="filter-label">Laps to Discard at Start of Race</div>
               <input type="number" id="fuelEffectFilterMinLap" value="1" min="0">
             </div>
             <div class="filter-item">
-              <div class="filter-label">Laps to Discard at End</div>
+              <div class="filter-label">Laps to Discard at End of Race</div>
               <input type="number" id="fuelEffectFilterEndLaps" value="1" min="0">
+            </div>
+            <div class="filter-item">
+              <div class="filter-label">Laps to Discard at Start of Stint</div>
+              <input type="number" id="fuelEffectFilterMinStintLap" value="0" min="0">
             </div>
             <div class="filter-item">
               <div class="filter-label">Min Distance to Car Ahead</div>
@@ -1626,6 +1638,7 @@
       filters: {
         minLap: 1,
         endLaps: 1,
+        minStintLap: 0,
         minDist: 3,
         rainfall: false,
         safetyCar: false,
@@ -1720,6 +1733,7 @@
       // Shared filters (lap time, tyre deg, fuel effect all use same filter element IDs)
       document.getElementById('filterMinLap').value = appState.filters.minLap;
       document.getElementById('filterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('filterMinStintLap').value = appState.filters.minStintLap;
       document.getElementById('filterMinDist').value = appState.filters.minDist;
       document.getElementById('filterRainfall').checked = appState.filters.rainfall;
       document.getElementById('filterSafetyCar').checked = appState.filters.safetyCar;
@@ -1730,6 +1744,7 @@
       // Tyre deg filters
       document.getElementById('tyreDegFilterMinLap').value = appState.filters.minLap;
       document.getElementById('tyreDegFilterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('tyreDegFilterMinStintLap').value = appState.filters.minStintLap;
       document.getElementById('tyreDegFilterMinDist').value = appState.filters.minDist;
       document.getElementById('tyreDegFilterRainfall').checked = appState.filters.rainfall;
       document.getElementById('tyreDegFilterSafetyCar').checked = appState.filters.safetyCar;
@@ -1740,6 +1755,7 @@
       // Fuel effect filters
       document.getElementById('fuelEffectFilterMinLap').value = appState.filters.minLap;
       document.getElementById('fuelEffectFilterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('fuelEffectFilterMinStintLap').value = appState.filters.minStintLap;
       document.getElementById('fuelEffectFilterMinDist').value = appState.filters.minDist;
       document.getElementById('fuelEffectFilterRainfall').checked = appState.filters.rainfall;
       document.getElementById('fuelEffectFilterSafetyCar').checked = appState.filters.safetyCar;
@@ -1881,6 +1897,7 @@
       // Shared filters
       appState.filters.minLap = parseInt(document.getElementById('filterMinLap').value) || 1;
       appState.filters.endLaps = parseInt(document.getElementById('filterEndLaps').value) || 1;
+      appState.filters.minStintLap = parseInt(document.getElementById('filterMinStintLap').value) || 0;
       appState.filters.minDist = parseFloat(document.getElementById('filterMinDist').value) || 3;
       appState.filters.rainfall = document.getElementById('filterRainfall').checked;
       appState.filters.safetyCar = document.getElementById('filterSafetyCar').checked;
@@ -3088,6 +3105,7 @@
     function setupLapTimeFilterListeners() {
       document.getElementById("filterMinLap").addEventListener("input", onLapTimeFilterChange);
       document.getElementById("filterEndLaps").addEventListener("input", onLapTimeFilterChange);
+      document.getElementById("filterMinStintLap").addEventListener("input", onLapTimeFilterChange);
       document.getElementById("filterMinDist").addEventListener("input", onLapTimeFilterChange);
       document.getElementById("filterRainfall").addEventListener("change", onLapTimeFilterChange);
       document.getElementById("filterSafetyCar").addEventListener("change", onLapTimeFilterChange);
@@ -3142,6 +3160,7 @@
       const lapsToDiscard = parseInt(document.getElementById("filterMinLap").value) || 0;
       const minLap = lapsToDiscard + 1;
       const endLaps = parseInt(document.getElementById("filterEndLaps").value) || 0;
+      const minStintLap = parseInt(document.getElementById("filterMinStintLap").value) || 0;
       const minDist = parseFloat(document.getElementById("filterMinDist").value) || 0;
       const includeRainfall = document.getElementById("filterRainfall").checked;
       const includeSafetyCar = document.getElementById("filterSafetyCar").checked;
@@ -3150,6 +3169,12 @@
       const includeRetired = document.getElementById('filterIncludeRetired').checked;
 
       return rows.filter(r => {
+        // Filter by stint lap first (before other filters)
+        if (minStintLap > 0) {
+          const tyreLife = parseInt(r.lap_TyreLife);
+          if (!isNaN(tyreLife) && tyreLife <= minStintLap) return false;
+        }
+
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap) return false;
 
@@ -3774,7 +3799,7 @@
     // Set up filter listeners for tyre deg panel
     function setupTyreDegFilterListeners() {
       const filterIds = [
-        'tyreDegFilterMinLap', 'tyreDegFilterEndLaps', 'tyreDegFilterMinDist',
+        'tyreDegFilterMinLap', 'tyreDegFilterEndLaps', 'tyreDegFilterMinStintLap', 'tyreDegFilterMinDist',
         'tyreDegFilterMinRows', 'tyreDegFilterMinCorr', 'tyreDegFilterRainfall',
         'tyreDegFilterSafetyCar', 'tyreDegFilterPitLaps', 'tyreDegFilterIncludeLapped',
         'tyreDegFilterIncludeRetired'
@@ -3863,7 +3888,7 @@
         saveToState('filters.minLap', parseInt(this.value) || 1);
       });
 
-      // Laps to Discard at End
+      // Laps to Discard at End of Race
       const filterEndLaps = document.getElementById('filterEndLaps');
       const tyreDegFilterEndLaps = document.getElementById('tyreDegFilterEndLaps');
       const fuelEffectFilterEndLaps = document.getElementById('fuelEffectFilterEndLaps');
@@ -3884,6 +3909,29 @@
         filterEndLaps.value = this.value;
         tyreDegFilterEndLaps.value = this.value;
         saveToState('filters.endLaps', parseInt(this.value) || 1);
+      });
+
+      // Laps to Discard at Start of Stint
+      const filterMinStintLap = document.getElementById('filterMinStintLap');
+      const tyreDegFilterMinStintLap = document.getElementById('tyreDegFilterMinStintLap');
+      const fuelEffectFilterMinStintLap = document.getElementById('fuelEffectFilterMinStintLap');
+
+      filterMinStintLap.addEventListener('input', function() {
+        tyreDegFilterMinStintLap.value = this.value;
+        fuelEffectFilterMinStintLap.value = this.value;
+        saveToState('filters.minStintLap', parseInt(this.value) || 0);
+      });
+
+      tyreDegFilterMinStintLap.addEventListener('input', function() {
+        filterMinStintLap.value = this.value;
+        fuelEffectFilterMinStintLap.value = this.value;
+        saveToState('filters.minStintLap', parseInt(this.value) || 0);
+      });
+
+      fuelEffectFilterMinStintLap.addEventListener('input', function() {
+        filterMinStintLap.value = this.value;
+        tyreDegFilterMinStintLap.value = this.value;
+        saveToState('filters.minStintLap', parseInt(this.value) || 0);
       });
 
       // Min Distance to Car Ahead
@@ -4040,6 +4088,7 @@
       const lapsToDiscard = parseInt(document.getElementById('tyreDegFilterMinLap').value) || 0;
       const minLap = lapsToDiscard + 1;
       const endLaps = parseInt(document.getElementById('tyreDegFilterEndLaps').value) || 0;
+      const minStintLap = parseInt(document.getElementById('tyreDegFilterMinStintLap').value) || 0;
       const minDist = parseFloat(document.getElementById('tyreDegFilterMinDist').value) || 0;
       const includeRainfall = document.getElementById('tyreDegFilterRainfall').checked;
       const includeSafetyCar = document.getElementById('tyreDegFilterSafetyCar').checked;
@@ -4048,6 +4097,12 @@
       const includeRetired = document.getElementById('tyreDegFilterIncludeRetired').checked;
 
       return rows.filter(r => {
+        // Filter by stint lap first (before other filters)
+        if (minStintLap > 0) {
+          const tyreLife = parseInt(r.lap_TyreLife);
+          if (!isNaN(tyreLife) && tyreLife <= minStintLap) return false;
+        }
+
         const lapNum = parseInt(r.lap_LapNumber);
         if (isNaN(lapNum) || lapNum < minLap) return false;
 
@@ -5060,6 +5115,13 @@
         }
       });
 
+      document.getElementById('fuelEffectFilterMinStintLap').addEventListener('input', () => {
+        if (currentSessionData && currentSessionData.length > 0) {
+          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          displayFuelEffectGroupsTable(filteredRows);
+        }
+      });
+
       document.getElementById('fuelEffectFilterMinDist').addEventListener('input', () => {
         if (currentSessionData && currentSessionData.length > 0) {
           const filteredRows = applyFuelEffectFilters(currentSessionData);
@@ -5116,6 +5178,7 @@
       const lapsToDiscard = parseInt(document.getElementById('fuelEffectFilterMinLap').value) || 0;
       const minLap = lapsToDiscard + 1;
       const endLaps = parseInt(document.getElementById('fuelEffectFilterEndLaps').value) || 0;
+      const minStintLap = parseInt(document.getElementById('fuelEffectFilterMinStintLap').value) || 0;
       const minDist = parseFloat(document.getElementById('fuelEffectFilterMinDist').value) || 0;
       const includeRainfall = document.getElementById('fuelEffectFilterRainfall').checked;
       const includeSafetyCar = document.getElementById('fuelEffectFilterSafetyCar').checked;
@@ -5127,6 +5190,12 @@
         // Session type filter - only 'R' (Race)
         const sessionType = String(r.session_type || "").trim();
         if (sessionType !== 'R') return false;
+
+        // Filter by stint lap first (before other filters)
+        if (minStintLap > 0) {
+          const tyreLife = parseInt(r.lap_TyreLife);
+          if (!isNaN(tyreLife) && tyreLife <= minStintLap) return false;
+        }
 
         // Min lap number
         const lapNum = parseInt(r.lap_LapNumber);
