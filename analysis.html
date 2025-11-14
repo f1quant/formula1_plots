@@ -1327,21 +1327,33 @@
         <div class="filter-panel">
           <div class="filters-title">Adjustments</div>
           <div class="filters-grid">
-            <div class="filter-item">
+            <div class="filter-item vertical">
               <div class="filter-label">Hard Deg (sec/lap)</div>
-              <input type="number" id="degHard" value="0.05" min="0" step="0.01">
+              <div class="slider-container">
+                <input type="range" id="degHard" min="0" max="0.3" step="0.001" value="0.05">
+                <div class="slider-value" id="degHardValue">0.050</div>
+              </div>
             </div>
-            <div class="filter-item">
+            <div class="filter-item vertical">
               <div class="filter-label">Medium Deg (sec/lap)</div>
-              <input type="number" id="degMedium" value="0.08" min="0" step="0.01">
+              <div class="slider-container">
+                <input type="range" id="degMedium" min="0" max="0.3" step="0.001" value="0.08">
+                <div class="slider-value" id="degMediumValue">0.080</div>
+              </div>
             </div>
-            <div class="filter-item">
+            <div class="filter-item vertical">
               <div class="filter-label">Soft Deg (sec/lap)</div>
-              <input type="number" id="degSoft" value="0.12" min="0" step="0.01">
+              <div class="slider-container">
+                <input type="range" id="degSoft" min="0" max="0.3" step="0.001" value="0.12">
+                <div class="slider-value" id="degSoftValue">0.120</div>
+              </div>
             </div>
-            <div class="filter-item">
+            <div class="filter-item vertical">
               <div class="filter-label">Fuel Effect (sec/lap)</div>
-              <input type="number" id="fuelEffect" value="0.025" min="0" step="0.001">
+              <div class="slider-container">
+                <input type="range" id="fuelEffect" min="0" max="0.3" step="0.001" value="0.025">
+                <div class="slider-value" id="fuelEffectValue">0.025</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1851,9 +1863,13 @@
 
       // Lap Time tab
       document.getElementById('degHard').value = appState.paceModel.degHard;
+      document.getElementById('degHardValue').textContent = appState.paceModel.degHard.toFixed(3);
       document.getElementById('degMedium').value = appState.paceModel.degMedium;
+      document.getElementById('degMediumValue').textContent = appState.paceModel.degMedium.toFixed(3);
       document.getElementById('degSoft').value = appState.paceModel.degSoft;
+      document.getElementById('degSoftValue').textContent = appState.paceModel.degSoft.toFixed(3);
       document.getElementById('fuelEffect').value = appState.paceModel.fuelEffect;
+      document.getElementById('fuelEffectValue').textContent = appState.paceModel.fuelEffect.toFixed(3);
 
       const fuelAdjustToggle = document.getElementById('fuelAdjustToggle');
       if (appState.lapTime.fuelAdjust) {
@@ -2361,18 +2377,21 @@
         if (config["Hard Deg"] !== undefined) {
           const value = config["Hard Deg"];
           document.getElementById('degHard').value = value;
+          document.getElementById('degHardValue').textContent = parseFloat(value).toFixed(3);
           const calculatorDegH = document.getElementById('calculatorDegH');
           if (calculatorDegH) calculatorDegH.value = value;
         }
         if (config["Medium Deg"] !== undefined) {
           const value = config["Medium Deg"];
           document.getElementById('degMedium').value = value;
+          document.getElementById('degMediumValue').textContent = parseFloat(value).toFixed(3);
           const calculatorDegM = document.getElementById('calculatorDegM');
           if (calculatorDegM) calculatorDegM.value = value;
         }
         if (config["Soft Deg"] !== undefined) {
           const value = config["Soft Deg"];
           document.getElementById('degSoft').value = value;
+          document.getElementById('degSoftValue').textContent = parseFloat(value).toFixed(3);
           const calculatorDegS = document.getElementById('calculatorDegS');
           if (calculatorDegS) calculatorDegS.value = value;
         }
@@ -2381,6 +2400,7 @@
         if (config["Fuel Effect"] !== undefined) {
           const fuelEffect = config["Fuel Effect"];
           document.getElementById('fuelEffect').value = fuelEffect;
+          document.getElementById('fuelEffectValue').textContent = parseFloat(fuelEffect).toFixed(3);
           document.getElementById('tyreDegFuelEffectSlider').value = fuelEffect;
           document.getElementById('tyreDegFuelEffectValue').textContent = parseFloat(fuelEffect).toFixed(3);
           const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
@@ -3245,6 +3265,7 @@
       document.getElementById('filterIncludeRetired').addEventListener('change', onLapTimeFilterChange);
       document.getElementById('degHard').addEventListener('input', function() {
         const value = parseFloat(this.value) || 0.05;
+        document.getElementById('degHardValue').textContent = value.toFixed(3);
         saveToState('paceModel.degHard', value);
         // Sync to calculator tab
         const calculatorDegH = document.getElementById('calculatorDegH');
@@ -3253,6 +3274,7 @@
       });
       document.getElementById('degMedium').addEventListener('input', function() {
         const value = parseFloat(this.value) || 0.08;
+        document.getElementById('degMediumValue').textContent = value.toFixed(3);
         saveToState('paceModel.degMedium', value);
         // Sync to calculator tab
         const calculatorDegM = document.getElementById('calculatorDegM');
@@ -3261,13 +3283,26 @@
       });
       document.getElementById('degSoft').addEventListener('input', function() {
         const value = parseFloat(this.value) || 0.12;
+        document.getElementById('degSoftValue').textContent = value.toFixed(3);
         saveToState('paceModel.degSoft', value);
         // Sync to calculator tab
         const calculatorDegS = document.getElementById('calculatorDegS');
         if (calculatorDegS) calculatorDegS.value = value;
         onLapTimeAdjustmentChange();
       });
-      document.getElementById('fuelEffect').addEventListener('input', onLapTimeAdjustmentChange);
+      document.getElementById('fuelEffect').addEventListener('input', function() {
+        const value = parseFloat(this.value) || 0.025;
+        document.getElementById('fuelEffectValue').textContent = value.toFixed(3);
+        saveToState('paceModel.fuelEffect', value);
+        // Sync to calculator tab and tyre deg tab
+        const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
+        if (calculatorFuelEffect) calculatorFuelEffect.value = value;
+        const tyreDegFuelEffectSlider = document.getElementById('tyreDegFuelEffectSlider');
+        const tyreDegFuelEffectValue = document.getElementById('tyreDegFuelEffectValue');
+        if (tyreDegFuelEffectSlider) tyreDegFuelEffectSlider.value = value;
+        if (tyreDegFuelEffectValue) tyreDegFuelEffectValue.textContent = value.toFixed(3);
+        onLapTimeAdjustmentChange();
+      });
 
       fuelAdjustToggle.addEventListener('click', function() {
         this.classList.toggle('active');
@@ -5360,8 +5395,11 @@
           newButton.addEventListener('click', () => {
             // Update pace model inputs for each compound
             const degSoftInput = document.getElementById('degSoft');
+            const degSoftValue = document.getElementById('degSoftValue');
             const degMediumInput = document.getElementById('degMedium');
+            const degMediumValue = document.getElementById('degMediumValue');
             const degHardInput = document.getElementById('degHard');
+            const degHardValue = document.getElementById('degHardValue');
             const calculatorDegS = document.getElementById('calculatorDegS');
             const calculatorDegM = document.getElementById('calculatorDegM');
             const calculatorDegH = document.getElementById('calculatorDegH');
@@ -5369,18 +5407,21 @@
             if (avgDegValues.has('SOFT')) {
               const value = avgDegValues.get('SOFT');
               if (degSoftInput) degSoftInput.value = value.toFixed(6);
+              if (degSoftValue) degSoftValue.textContent = value.toFixed(3);
               if (calculatorDegS) calculatorDegS.value = value.toFixed(6);
               saveToState('paceModel.degSoft', parseFloat(value.toFixed(6)));
             }
             if (avgDegValues.has('MEDIUM')) {
               const value = avgDegValues.get('MEDIUM');
               if (degMediumInput) degMediumInput.value = value.toFixed(6);
+              if (degMediumValue) degMediumValue.textContent = value.toFixed(3);
               if (calculatorDegM) calculatorDegM.value = value.toFixed(6);
               saveToState('paceModel.degMedium', parseFloat(value.toFixed(6)));
             }
             if (avgDegValues.has('HARD')) {
               const value = avgDegValues.get('HARD');
               if (degHardInput) degHardInput.value = value.toFixed(6);
+              if (degHardValue) degHardValue.textContent = value.toFixed(3);
               if (calculatorDegH) calculatorDegH.value = value.toFixed(6);
               saveToState('paceModel.degHard', parseFloat(value.toFixed(6)));
             }
@@ -6150,11 +6191,13 @@
 
           // Update all fuel effect inputs
           const fuelEffectInput = document.getElementById('fuelEffect');
+          const fuelEffectValue = document.getElementById('fuelEffectValue');
           const tyreDegFuelEffectSlider = document.getElementById('tyreDegFuelEffectSlider');
           const tyreDegFuelEffectValue = document.getElementById('tyreDegFuelEffectValue');
           const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
 
           if (fuelEffectInput) fuelEffectInput.value = formattedValue;
+          if (fuelEffectValue) fuelEffectValue.textContent = formattedValue.toFixed(3);
           if (tyreDegFuelEffectSlider) tyreDegFuelEffectSlider.value = formattedValue;
           if (tyreDegFuelEffectValue) tyreDegFuelEffectValue.textContent = formattedValue.toFixed(3);
           if (calculatorFuelEffect) calculatorFuelEffect.value = formattedValue;
