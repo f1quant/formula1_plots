@@ -1407,7 +1407,10 @@
         </div>
         <div id="tyreDegAvgDegDisplay" class="tyre-choices-display" style="display: none; flex: 1;">
           <div class="tyre-choices-label">Average Deg:</div>
-          <div id="tyreDegAvgDegText"></div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div id="tyreDegAvgDegText"></div>
+            <button id="tyreDegCopyAvgDegButton" style="display: none; padding: 4px 12px; font-size: 10px; background: var(--accent-color); color: var(--bg-color); border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Select</button>
+          </div>
         </div>
       </div>
 
@@ -5267,17 +5270,74 @@
       });
 
       // Calculate and display average deg for each compound
+      const avgDegValues = new Map(); // Store for copy button
       if (compoundDegValues.size > 0) {
         const avgDegParts = [];
         compoundDegValues.forEach((degValues, compound) => {
           const avgDeg = degValues.reduce((sum, val) => sum + val, 0) / degValues.length;
+          avgDegValues.set(compound, avgDeg);
           const color = getF1TireColor(compound);
           avgDegParts.push(`<span style="color: ${color}; font-weight: 600;">${compound}: ${avgDeg.toFixed(4)}s/lap</span>`);
         });
         tyreDegAvgDegText.innerHTML = avgDegParts.join(' &nbsp;&nbsp;|&nbsp;&nbsp; ');
         tyreDegAvgDegDisplay.style.display = 'flex';
+
+        // Set up copy button
+        const copyButton = document.getElementById('tyreDegCopyAvgDegButton');
+        if (copyButton) {
+          copyButton.style.display = 'block';
+
+          // Remove old event listeners by cloning the button
+          const newButton = copyButton.cloneNode(true);
+          copyButton.parentNode.replaceChild(newButton, copyButton);
+
+          newButton.addEventListener('click', () => {
+            // Update pace model inputs for each compound
+            const degSoftInput = document.getElementById('degSoft');
+            const degMediumInput = document.getElementById('degMedium');
+            const degHardInput = document.getElementById('degHard');
+            const calculatorDegS = document.getElementById('calculatorDegS');
+            const calculatorDegM = document.getElementById('calculatorDegM');
+            const calculatorDegH = document.getElementById('calculatorDegH');
+
+            if (avgDegValues.has('SOFT')) {
+              const value = avgDegValues.get('SOFT');
+              if (degSoftInput) degSoftInput.value = value.toFixed(6);
+              if (calculatorDegS) calculatorDegS.value = value.toFixed(6);
+              saveToState('paceModel.degSoft', parseFloat(value.toFixed(6)));
+            }
+            if (avgDegValues.has('MEDIUM')) {
+              const value = avgDegValues.get('MEDIUM');
+              if (degMediumInput) degMediumInput.value = value.toFixed(6);
+              if (calculatorDegM) calculatorDegM.value = value.toFixed(6);
+              saveToState('paceModel.degMedium', parseFloat(value.toFixed(6)));
+            }
+            if (avgDegValues.has('HARD')) {
+              const value = avgDegValues.get('HARD');
+              if (degHardInput) degHardInput.value = value.toFixed(6);
+              if (calculatorDegH) calculatorDegH.value = value.toFixed(6);
+              saveToState('paceModel.degHard', parseFloat(value.toFixed(6)));
+            }
+
+            // Trigger updates if lap time data exists
+            if (lapTimeCurrentGroups && lapTimeCurrentGroups.size > 0) {
+              renderLapTimeChart();
+              renderLapTimeSummaryTable();
+            }
+
+            // Visual feedback
+            newButton.textContent = 'Selected!';
+            setTimeout(() => {
+              newButton.textContent = 'Select';
+            }, 1000);
+          });
+        }
       } else {
         tyreDegAvgDegDisplay.style.display = 'none';
+        const copyButton = document.getElementById('tyreDegCopyAvgDegButton');
+        if (copyButton) {
+          copyButton.style.display = 'none';
+        }
       }
 
       // Create series for scatter plot and build mapping
