@@ -1614,6 +1614,332 @@
     let selectedDrivers = new Set(); // Shared driver selection across race trace and lap time panels
 
     // ============================================================================
+    // GLOBAL STATE MANAGEMENT
+    // ============================================================================
+
+    /**
+     * Global state object storing all user inputs across all tabs.
+     * This allows for future serialization and state persistence.
+     */
+    const appState = {
+      // Shared filters (synced across lap time, tyre deg, and fuel effect tabs)
+      filters: {
+        minLap: 1,
+        endLaps: 1,
+        minDist: 3,
+        rainfall: false,
+        safetyCar: false,
+        pitLaps: false,
+        includeLapped: true,
+        includeRetired: true
+      },
+
+      // Race Trace tab
+      raceTrace: {
+        lapMin: 1,
+        lapMax: 1,
+        selectedDrivers: [] // Array of driver names (data-dependent)
+      },
+
+      // Lap Time tab
+      lapTime: {
+        fuelAdjust: false,
+        tyreLifeAdjust: false,
+        degHard: 0.05,
+        degMedium: 0.08,
+        degSoft: 0.12,
+        fuelEffect: 0.025,
+        selectedDrivers: [] // Array of driver names (data-dependent)
+      },
+
+      // Tyre Deg tab
+      tyreDeg: {
+        fuelAdjust: true,
+        fuelEffectSlider: 0.025,
+        filterMinRows: 5,
+        filterMinCorr: -1.0,
+        selectedStints: [] // Array of stint keys (data-dependent)
+      },
+
+      // Fuel Effect tab
+      fuelEffect: {
+        fuelEffectInput: 0.025
+      },
+
+      // Calculator tab
+      calculator: {
+        strategies: ['', '', '', '', ''], // Array of strategy strings
+        pitLoss: null,
+        scLength: null,
+        fuelEffect: null,
+        paceS: null,
+        paceM: null,
+        paceH: null,
+        degS: null,
+        degM: null,
+        degH: null,
+        scProbRanges: [] // Array of {fromLap, toLap, probability}
+      }
+    };
+
+    /**
+     * Save a value to the state object
+     * @param {string} path - Dot-notation path (e.g., 'filters.minLap' or 'lapTime.fuelAdjust')
+     * @param {*} value - Value to save
+     */
+    function saveToState(path, value) {
+      const keys = path.split('.');
+      let obj = appState;
+      for (let i = 0; i < keys.length - 1; i++) {
+        obj = obj[keys[i]];
+      }
+      obj[keys[keys.length - 1]] = value;
+      console.log(`State updated: ${path} = ${JSON.stringify(value)}`);
+    }
+
+    /**
+     * Get a value from the state object
+     * @param {string} path - Dot-notation path
+     * @returns {*} The value at that path
+     */
+    function getFromState(path) {
+      const keys = path.split('.');
+      let obj = appState;
+      for (let i = 0; i < keys.length; i++) {
+        obj = obj[keys[i]];
+        if (obj === undefined) return undefined;
+      }
+      return obj;
+    }
+
+    /**
+     * Restore state to UI elements
+     * Validates data-dependent selections against available data
+     */
+    function restoreStateToUI() {
+      // Shared filters (lap time, tyre deg, fuel effect all use same filter element IDs)
+      document.getElementById('filterMinLap').value = appState.filters.minLap;
+      document.getElementById('filterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('filterMinDist').value = appState.filters.minDist;
+      document.getElementById('filterRainfall').checked = appState.filters.rainfall;
+      document.getElementById('filterSafetyCar').checked = appState.filters.safetyCar;
+      document.getElementById('filterPitLaps').checked = appState.filters.pitLaps;
+      document.getElementById('filterIncludeLapped').checked = appState.filters.includeLapped;
+      document.getElementById('filterIncludeRetired').checked = appState.filters.includeRetired;
+
+      // Tyre deg filters
+      document.getElementById('tyreDegFilterMinLap').value = appState.filters.minLap;
+      document.getElementById('tyreDegFilterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('tyreDegFilterMinDist').value = appState.filters.minDist;
+      document.getElementById('tyreDegFilterRainfall').checked = appState.filters.rainfall;
+      document.getElementById('tyreDegFilterSafetyCar').checked = appState.filters.safetyCar;
+      document.getElementById('tyreDegFilterPitLaps').checked = appState.filters.pitLaps;
+      document.getElementById('tyreDegFilterIncludeLapped').checked = appState.filters.includeLapped;
+      document.getElementById('tyreDegFilterIncludeRetired').checked = appState.filters.includeRetired;
+
+      // Fuel effect filters
+      document.getElementById('fuelEffectFilterMinLap').value = appState.filters.minLap;
+      document.getElementById('fuelEffectFilterEndLaps').value = appState.filters.endLaps;
+      document.getElementById('fuelEffectFilterMinDist').value = appState.filters.minDist;
+      document.getElementById('fuelEffectFilterRainfall').checked = appState.filters.rainfall;
+      document.getElementById('fuelEffectFilterSafetyCar').checked = appState.filters.safetyCar;
+      document.getElementById('fuelEffectFilterPitLaps').checked = appState.filters.pitLaps;
+      document.getElementById('fuelEffectFilterIncludeLapped').checked = appState.filters.includeLapped;
+      document.getElementById('fuelEffectFilterIncludeRetired').checked = appState.filters.includeRetired;
+
+      // Lap Time tab
+      document.getElementById('degHard').value = appState.lapTime.degHard;
+      document.getElementById('degMedium').value = appState.lapTime.degMedium;
+      document.getElementById('degSoft').value = appState.lapTime.degSoft;
+      document.getElementById('fuelEffect').value = appState.lapTime.fuelEffect;
+
+      const fuelAdjustToggle = document.getElementById('fuelAdjustToggle');
+      if (appState.lapTime.fuelAdjust) {
+        fuelAdjustToggle.classList.add('active');
+      } else {
+        fuelAdjustToggle.classList.remove('active');
+      }
+
+      const tyreLifeAdjustToggle = document.getElementById('tyreLifeAdjustToggle');
+      if (appState.lapTime.tyreLifeAdjust) {
+        tyreLifeAdjustToggle.classList.add('active');
+      } else {
+        tyreLifeAdjustToggle.classList.remove('active');
+      }
+
+      // Tyre Deg tab
+      document.getElementById('tyreDegFilterMinRows').value = appState.tyreDeg.filterMinRows;
+      document.getElementById('tyreDegFilterMinCorr').value = appState.tyreDeg.filterMinCorr;
+      document.getElementById('tyreDegFuelEffectSlider').value = appState.tyreDeg.fuelEffectSlider;
+
+      const tyreDegFuelAdjustToggle = document.getElementById('tyreDegFuelAdjustToggle');
+      if (appState.tyreDeg.fuelAdjust) {
+        tyreDegFuelAdjustToggle.classList.add('active');
+      } else {
+        tyreDegFuelAdjustToggle.classList.remove('active');
+      }
+
+      // Fuel Effect tab
+      const fuelEffectInput = document.getElementById('fuelEffectInput');
+      if (fuelEffectInput && appState.fuelEffect.fuelEffectInput !== null) {
+        fuelEffectInput.value = appState.fuelEffect.fuelEffectInput;
+      }
+
+      // Calculator tab - restore all inputs
+      const calculatorPitLoss = document.getElementById('calculatorPitLoss');
+      const calculatorScLength = document.getElementById('calculatorScLength');
+      const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
+
+      if (calculatorPitLoss && appState.calculator.pitLoss !== null) {
+        calculatorPitLoss.value = appState.calculator.pitLoss;
+      }
+      if (calculatorScLength && appState.calculator.scLength !== null) {
+        calculatorScLength.value = appState.calculator.scLength;
+      }
+      if (calculatorFuelEffect && appState.calculator.fuelEffect !== null) {
+        calculatorFuelEffect.value = appState.calculator.fuelEffect;
+      }
+
+      document.getElementById('calculatorPaceS').value = appState.calculator.paceS || '';
+      document.getElementById('calculatorPaceM').value = appState.calculator.paceM || '';
+      document.getElementById('calculatorPaceH').value = appState.calculator.paceH || '';
+      document.getElementById('calculatorDegS').value = appState.calculator.degS || '';
+      document.getElementById('calculatorDegM').value = appState.calculator.degM || '';
+      document.getElementById('calculatorDegH').value = appState.calculator.degH || '';
+
+      // Restore strategy inputs
+      const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
+      strategyInputs.forEach((input, idx) => {
+        if (idx < appState.calculator.strategies.length) {
+          input.value = appState.calculator.strategies[idx];
+        }
+      });
+    }
+
+    /**
+     * Restore data-dependent selections with validation
+     * Only restores selections that exist in the current data
+     */
+    function restoreDataDependentSelections(panelName) {
+      switch(panelName) {
+        case 'race-trace':
+        case 'lap-time':
+          // Restore driver selections (both use same selectedDrivers Set)
+          const savedDrivers = appState.raceTrace.selectedDrivers || [];
+          const availableDrivers = panelName === 'race-trace'
+            ? Object.keys(raceTraceDriverLines)
+            : Array.from(lapTimeCurrentGroups.keys());
+
+          // Only select drivers that exist in the current data
+          savedDrivers.forEach(driver => {
+            if (availableDrivers.includes(driver)) {
+              selectedDrivers.add(driver);
+            }
+          });
+
+          // If no drivers were restored, auto-select top 5
+          if (selectedDrivers.size === 0 && availableDrivers.length > 0) {
+            if (panelName === 'race-trace') {
+              const driverFinishInfo = availableDrivers.map(driver => {
+                const data = raceTraceDriverLines[driver];
+                const maxLapNum = Math.max(...data.laps);
+                const lastLapIndex = data.laps.indexOf(maxLapNum);
+                const lastPosition = data.positions[lastLapIndex];
+                return { driver, maxLapNum, lastPosition };
+              });
+              const sortedDrivers = sortDriversByFinishingOrder(driverFinishInfo);
+              sortedDrivers.slice(0, 5).forEach(({ driver }) => {
+                selectedDrivers.add(driver);
+              });
+            } else {
+              const top5 = availableDrivers.slice(0, Math.min(5, availableDrivers.length));
+              top5.forEach(driver => selectedDrivers.add(driver));
+            }
+          }
+          break;
+
+        case 'tyre-deg':
+          // Restore stint selections
+          const savedStints = appState.tyreDeg.selectedStints || [];
+          const availableStintKeys = Array.from(tyreDegFilteredGroups.keys());
+
+          // Only select stints that exist in the current filtered data
+          savedStints.forEach(stintKey => {
+            if (availableStintKeys.includes(stintKey)) {
+              tyreDegSelectedStints.add(stintKey);
+            }
+          });
+          break;
+      }
+    }
+
+    /**
+     * Capture current UI state and save to appState
+     * Called before data reload or when switching sessions
+     */
+    function captureUIState() {
+      // Shared filters
+      appState.filters.minLap = parseInt(document.getElementById('filterMinLap').value) || 1;
+      appState.filters.endLaps = parseInt(document.getElementById('filterEndLaps').value) || 1;
+      appState.filters.minDist = parseFloat(document.getElementById('filterMinDist').value) || 3;
+      appState.filters.rainfall = document.getElementById('filterRainfall').checked;
+      appState.filters.safetyCar = document.getElementById('filterSafetyCar').checked;
+      appState.filters.pitLaps = document.getElementById('filterPitLaps').checked;
+      appState.filters.includeLapped = document.getElementById('filterIncludeLapped').checked;
+      appState.filters.includeRetired = document.getElementById('filterIncludeRetired').checked;
+
+      // Lap Time tab
+      appState.lapTime.degHard = parseFloat(document.getElementById('degHard').value) || 0.05;
+      appState.lapTime.degMedium = parseFloat(document.getElementById('degMedium').value) || 0.08;
+      appState.lapTime.degSoft = parseFloat(document.getElementById('degSoft').value) || 0.12;
+      appState.lapTime.fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0.025;
+      appState.lapTime.fuelAdjust = document.getElementById('fuelAdjustToggle').classList.contains('active');
+      appState.lapTime.tyreLifeAdjust = document.getElementById('tyreLifeAdjustToggle').classList.contains('active');
+
+      // Tyre Deg tab
+      appState.tyreDeg.filterMinRows = parseInt(document.getElementById('tyreDegFilterMinRows').value) || 5;
+      appState.tyreDeg.filterMinCorr = parseFloat(document.getElementById('tyreDegFilterMinCorr').value) || -1.0;
+      appState.tyreDeg.fuelEffectSlider = parseFloat(document.getElementById('tyreDegFuelEffectSlider').value) || 0.025;
+      appState.tyreDeg.fuelAdjust = document.getElementById('tyreDegFuelAdjustToggle').classList.contains('active');
+
+      // Fuel Effect tab
+      const fuelEffectInput = document.getElementById('fuelEffectInput');
+      if (fuelEffectInput) {
+        appState.fuelEffect.fuelEffectInput = parseFloat(fuelEffectInput.value) || 0.025;
+      }
+
+      // Race Trace tab
+      const raceTraceLapMin = document.getElementById('raceTraceLapMin');
+      const raceTraceLapMax = document.getElementById('raceTraceLapMax');
+      if (raceTraceLapMin && raceTraceLapMax) {
+        appState.raceTrace.lapMin = parseInt(raceTraceLapMin.value) || 1;
+        appState.raceTrace.lapMax = parseInt(raceTraceLapMax.value) || 1;
+      }
+
+      // Calculator tab
+      const calculatorPitLoss = document.getElementById('calculatorPitLoss');
+      const calculatorScLength = document.getElementById('calculatorScLength');
+      const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
+
+      if (calculatorPitLoss) appState.calculator.pitLoss = parseFloat(calculatorPitLoss.value) || null;
+      if (calculatorScLength) appState.calculator.scLength = parseInt(calculatorScLength.value) || null;
+      if (calculatorFuelEffect) appState.calculator.fuelEffect = parseFloat(calculatorFuelEffect.value) || null;
+
+      appState.calculator.paceS = parseFloat(document.getElementById('calculatorPaceS').value) || null;
+      appState.calculator.paceM = parseFloat(document.getElementById('calculatorPaceM').value) || null;
+      appState.calculator.paceH = parseFloat(document.getElementById('calculatorPaceH').value) || null;
+      appState.calculator.degS = parseFloat(document.getElementById('calculatorDegS').value) || null;
+      appState.calculator.degM = parseFloat(document.getElementById('calculatorDegM').value) || null;
+      appState.calculator.degH = parseFloat(document.getElementById('calculatorDegH').value) || null;
+
+      // Capture strategy inputs
+      const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
+      appState.calculator.strategies = Array.from(strategyInputs).map(input => input.value);
+
+      console.log('UI state captured:', appState);
+    }
+
+    // ============================================================================
     // TAB SWITCHING
     // ============================================================================
 
@@ -1683,21 +2009,8 @@
           calculateRaceTraceGaps(sessionData);
           buildRaceTraceDriverList();
 
-          // Auto-select top 5 drivers for new session
-          if (selectedDrivers.size === 0) {
-            const drivers = Object.keys(raceTraceDriverLines);
-            const driverFinishInfo = drivers.map(driver => {
-              const data = raceTraceDriverLines[driver];
-              const maxLapNum = Math.max(...data.laps);
-              const lastLapIndex = data.laps.indexOf(maxLapNum);
-              const lastPosition = data.positions[lastLapIndex];
-              return { driver, maxLapNum, lastPosition };
-            });
-            const sortedDrivers = sortDriversByFinishingOrder(driverFinishInfo);
-            sortedDrivers.slice(0, 5).forEach(({ driver }) => {
-              selectedDrivers.add(driver);
-            });
-          }
+          // Restore driver selections from state (with validation)
+          restoreDataDependentSelections('race-trace');
 
           // Update checkboxes to reflect current selection
           updateRaceTraceDriverCheckboxes();
@@ -1720,11 +2033,10 @@
           const filteredRows = applyLapTimeFilters(sessionData);
           processLapTimeData(filteredRows);
 
-          // Auto-select top 5 drivers for new session (if not already selected)
-          if (selectedDrivers.size === 0 && lapTimeCurrentGroups.size > 0) {
+          // Restore driver selections from state (with validation)
+          if (lapTimeCurrentGroups.size > 0) {
             const drivers = Array.from(lapTimeCurrentGroups.keys());
-            const top5 = drivers.slice(0, Math.min(5, drivers.length));
-            top5.forEach(driver => selectedDrivers.add(driver));
+            restoreDataDependentSelections('lap-time');
             // Re-render to show the selected drivers
             buildLapTimeDriversList(drivers);
             renderLapTimeChart();
@@ -1768,6 +2080,10 @@
 
     function init() {
       initTabNavigation();
+
+      // Restore UI state from appState (for simple inputs)
+      // Data-dependent selections will be restored when data loads
+      restoreStateToUI();
 
       // Set up reload data button
       reloadDataBtn.addEventListener('click', () => {
@@ -2180,8 +2496,14 @@
       renderRaceTraceChart();
     });
 
-    raceTraceLapMin.addEventListener('input', () => renderRaceTraceChart());
-    raceTraceLapMax.addEventListener('input', () => renderRaceTraceChart());
+    raceTraceLapMin.addEventListener('input', function() {
+      saveToState('raceTrace.lapMin', parseInt(this.value) || 1);
+      renderRaceTraceChart();
+    });
+    raceTraceLapMax.addEventListener('input', function() {
+      saveToState('raceTrace.lapMax', parseInt(this.value) || 1);
+      renderRaceTraceChart();
+    });
 
     function getDriverInfo(code) {
       // Get driver info for current session with proper parameters
@@ -2267,6 +2589,10 @@
           } else {
             selectedDrivers.delete(driver);
           }
+          // Save driver selections to state (both race trace and lap time use same set)
+          const drivers = Array.from(selectedDrivers);
+          saveToState('raceTrace.selectedDrivers', drivers);
+          saveToState('lapTime.selectedDrivers', drivers);
           renderRaceTraceChart();
           // Also update lap time chart if it has data
           if (lapTimeCurrentGroups.size > 0) {
@@ -2759,18 +3085,29 @@
       document.getElementById("filterPitLaps").addEventListener("change", onLapTimeFilterChange);
       document.getElementById('filterIncludeLapped').addEventListener('change', onLapTimeFilterChange);
       document.getElementById('filterIncludeRetired').addEventListener('change', onLapTimeFilterChange);
-      document.getElementById('degHard').addEventListener('input', onLapTimeAdjustmentChange);
-      document.getElementById('degMedium').addEventListener('input', onLapTimeAdjustmentChange);
-      document.getElementById('degSoft').addEventListener('input', onLapTimeAdjustmentChange);
+      document.getElementById('degHard').addEventListener('input', function() {
+        saveToState('lapTime.degHard', parseFloat(this.value) || 0.05);
+        onLapTimeAdjustmentChange();
+      });
+      document.getElementById('degMedium').addEventListener('input', function() {
+        saveToState('lapTime.degMedium', parseFloat(this.value) || 0.08);
+        onLapTimeAdjustmentChange();
+      });
+      document.getElementById('degSoft').addEventListener('input', function() {
+        saveToState('lapTime.degSoft', parseFloat(this.value) || 0.12);
+        onLapTimeAdjustmentChange();
+      });
       document.getElementById('fuelEffect').addEventListener('input', onLapTimeAdjustmentChange);
 
       fuelAdjustToggle.addEventListener('click', function() {
         this.classList.toggle('active');
+        saveToState('lapTime.fuelAdjust', this.classList.contains('active'));
         renderLapTimeChart();
       });
 
       tyreLifeAdjustToggle.addEventListener('click', function() {
         this.classList.toggle('active');
+        saveToState('lapTime.tyreLifeAdjust', this.classList.contains('active'));
         renderLapTimeChart();
       });
     }
@@ -2944,6 +3281,10 @@
           } else {
             selectedDrivers.delete(driver);
           }
+          // Save driver selections to state (both race trace and lap time use same set)
+          const drivers = Array.from(selectedDrivers);
+          saveToState('raceTrace.selectedDrivers', drivers);
+          saveToState('lapTime.selectedDrivers', drivers);
           renderLapTimeChart();
           // Also update race trace chart if it has data
           if (Object.keys(raceTraceDriverLines).length > 0) {
@@ -3401,6 +3742,12 @@
         if (el) {
           const eventType = el.type === 'checkbox' ? 'change' : 'input';
           el.addEventListener(eventType, () => {
+            // Save tyre deg specific filters to state
+            if (id === 'tyreDegFilterMinRows') {
+              saveToState('tyreDeg.filterMinRows', parseInt(el.value) || 5);
+            } else if (id === 'tyreDegFilterMinCorr') {
+              saveToState('tyreDeg.filterMinCorr', parseFloat(el.value) || -1.0);
+            }
             if (currentSessionData && currentSessionData.length > 0) {
               processTyreDegData(currentSessionData);
             }
@@ -3421,6 +3768,7 @@
       // Fuel adjust toggle for lap time chart
       tyreDegFuelAdjustToggle.addEventListener('click', function() {
         this.classList.toggle('active');
+        saveToState('tyreDeg.fuelAdjust', this.classList.contains('active'));
         renderTyreDegLapTimeChart();
       });
     }
@@ -3439,12 +3787,14 @@
         // Sync to tyre deg slider (doesn't trigger input event)
         tyreDegFuelEffectSlider.value = value;
         tyreDegFuelEffectValue.textContent = value.toFixed(3);
+        saveToState('lapTime.fuelEffect', value);
       });
 
       tyreDegFuelEffectSlider.addEventListener('input', function() {
         const value = parseFloat(this.value) || 0;
         // Sync to lap time input (doesn't trigger input event)
         fuelEffectInput.value = value.toFixed(3);
+        saveToState('tyreDeg.fuelEffectSlider', value);
       });
 
       // Laps to Discard at Start
@@ -3455,16 +3805,19 @@
       filterMinLap.addEventListener('input', function() {
         tyreDegFilterMinLap.value = this.value;
         fuelEffectFilterMinLap.value = this.value;
+        saveToState('filters.minLap', parseInt(this.value) || 1);
       });
 
       tyreDegFilterMinLap.addEventListener('input', function() {
         filterMinLap.value = this.value;
         fuelEffectFilterMinLap.value = this.value;
+        saveToState('filters.minLap', parseInt(this.value) || 1);
       });
 
       fuelEffectFilterMinLap.addEventListener('input', function() {
         filterMinLap.value = this.value;
         tyreDegFilterMinLap.value = this.value;
+        saveToState('filters.minLap', parseInt(this.value) || 1);
       });
 
       // Laps to Discard at End
@@ -3475,16 +3828,19 @@
       filterEndLaps.addEventListener('input', function() {
         tyreDegFilterEndLaps.value = this.value;
         fuelEffectFilterEndLaps.value = this.value;
+        saveToState('filters.endLaps', parseInt(this.value) || 1);
       });
 
       tyreDegFilterEndLaps.addEventListener('input', function() {
         filterEndLaps.value = this.value;
         fuelEffectFilterEndLaps.value = this.value;
+        saveToState('filters.endLaps', parseInt(this.value) || 1);
       });
 
       fuelEffectFilterEndLaps.addEventListener('input', function() {
         filterEndLaps.value = this.value;
         tyreDegFilterEndLaps.value = this.value;
+        saveToState('filters.endLaps', parseInt(this.value) || 1);
       });
 
       // Min Distance to Car Ahead
@@ -3495,16 +3851,19 @@
       filterMinDist.addEventListener('input', function() {
         tyreDegFilterMinDist.value = this.value;
         fuelEffectFilterMinDist.value = this.value;
+        saveToState('filters.minDist', parseFloat(this.value) || 3);
       });
 
       tyreDegFilterMinDist.addEventListener('input', function() {
         filterMinDist.value = this.value;
         fuelEffectFilterMinDist.value = this.value;
+        saveToState('filters.minDist', parseFloat(this.value) || 3);
       });
 
       fuelEffectFilterMinDist.addEventListener('input', function() {
         filterMinDist.value = this.value;
         tyreDegFilterMinDist.value = this.value;
+        saveToState('filters.minDist', parseFloat(this.value) || 3);
       });
 
       // Include Rainfall
@@ -3515,16 +3874,19 @@
       filterRainfall.addEventListener('change', function() {
         tyreDegFilterRainfall.checked = this.checked;
         fuelEffectFilterRainfall.checked = this.checked;
+        saveToState('filters.rainfall', this.checked);
       });
 
       tyreDegFilterRainfall.addEventListener('change', function() {
         filterRainfall.checked = this.checked;
         fuelEffectFilterRainfall.checked = this.checked;
+        saveToState('filters.rainfall', this.checked);
       });
 
       fuelEffectFilterRainfall.addEventListener('change', function() {
         filterRainfall.checked = this.checked;
         tyreDegFilterRainfall.checked = this.checked;
+        saveToState('filters.rainfall', this.checked);
       });
 
       // Include Safety Car
@@ -3535,16 +3897,19 @@
       filterSafetyCar.addEventListener('change', function() {
         tyreDegFilterSafetyCar.checked = this.checked;
         fuelEffectFilterSafetyCar.checked = this.checked;
+        saveToState('filters.safetyCar', this.checked);
       });
 
       tyreDegFilterSafetyCar.addEventListener('change', function() {
         filterSafetyCar.checked = this.checked;
         fuelEffectFilterSafetyCar.checked = this.checked;
+        saveToState('filters.safetyCar', this.checked);
       });
 
       fuelEffectFilterSafetyCar.addEventListener('change', function() {
         filterSafetyCar.checked = this.checked;
         tyreDegFilterSafetyCar.checked = this.checked;
+        saveToState('filters.safetyCar', this.checked);
       });
 
       // Include Pit Laps
@@ -3555,16 +3920,19 @@
       filterPitLaps.addEventListener('change', function() {
         tyreDegFilterPitLaps.checked = this.checked;
         fuelEffectFilterPitLaps.checked = this.checked;
+        saveToState('filters.pitLaps', this.checked);
       });
 
       tyreDegFilterPitLaps.addEventListener('change', function() {
         filterPitLaps.checked = this.checked;
         fuelEffectFilterPitLaps.checked = this.checked;
+        saveToState('filters.pitLaps', this.checked);
       });
 
       fuelEffectFilterPitLaps.addEventListener('change', function() {
         filterPitLaps.checked = this.checked;
         tyreDegFilterPitLaps.checked = this.checked;
+        saveToState('filters.pitLaps', this.checked);
       });
 
       // Include Lapped
@@ -3575,16 +3943,19 @@
       filterIncludeLapped.addEventListener('change', function() {
         tyreDegFilterIncludeLapped.checked = this.checked;
         fuelEffectFilterIncludeLapped.checked = this.checked;
+        saveToState('filters.includeLapped', this.checked);
       });
 
       tyreDegFilterIncludeLapped.addEventListener('change', function() {
         filterIncludeLapped.checked = this.checked;
         fuelEffectFilterIncludeLapped.checked = this.checked;
+        saveToState('filters.includeLapped', this.checked);
       });
 
       fuelEffectFilterIncludeLapped.addEventListener('change', function() {
         filterIncludeLapped.checked = this.checked;
         tyreDegFilterIncludeLapped.checked = this.checked;
+        saveToState('filters.includeLapped', this.checked);
       });
 
       // Include Retired
@@ -3595,16 +3966,19 @@
       filterIncludeRetired.addEventListener('change', function() {
         tyreDegFilterIncludeRetired.checked = this.checked;
         fuelEffectFilterIncludeRetired.checked = this.checked;
+        saveToState('filters.includeRetired', this.checked);
       });
 
       tyreDegFilterIncludeRetired.addEventListener('change', function() {
         filterIncludeRetired.checked = this.checked;
         fuelEffectFilterIncludeRetired.checked = this.checked;
+        saveToState('filters.includeRetired', this.checked);
       });
 
       fuelEffectFilterIncludeRetired.addEventListener('change', function() {
         filterIncludeRetired.checked = this.checked;
         tyreDegFilterIncludeRetired.checked = this.checked;
+        saveToState('filters.includeRetired', this.checked);
       });
     }
 
@@ -3746,11 +4120,16 @@
 
       // Handle stint selection on event change
       if (isEventChange) {
-        // Event changed - select all stints
+        // Event changed - restore from state or select all
         tyreDegSelectedStints.clear();
-        tyreDegFilteredGroups.forEach((group, key) => {
-          tyreDegSelectedStints.add(key);
-        });
+        restoreDataDependentSelections('tyre-deg');
+
+        // If no stints were restored from state, select all stints
+        if (tyreDegSelectedStints.size === 0) {
+          tyreDegFilteredGroups.forEach((group, key) => {
+            tyreDegSelectedStints.add(key);
+          });
+        }
       } else {
         // Filter changed - maintain selection only for stints that were in previous view
         const stintsToKeep = new Set();
@@ -3926,6 +4305,7 @@
             tyreDegSelectedStints.delete(key);
             tr.classList.remove('stint-selected');
           }
+          saveToState('tyreDeg.selectedStints', Array.from(tyreDegSelectedStints));
           renderTyreDegScatterChart();
           renderTyreDegLapTimeChart();
         });
@@ -4043,6 +4423,7 @@
               tyreDegSelectedStints.delete(key);
             });
           }
+          saveToState('tyreDeg.selectedStints', Array.from(tyreDegSelectedStints));
           renderTyreDegStintsTable();
           renderTyreDegScatterChart();
           renderTyreDegLapTimeChart();
@@ -4175,6 +4556,8 @@
           }
         }
       });
+
+      saveToState('tyreDeg.selectedStints', Array.from(tyreDegSelectedStints));
 
       // Close the dropdown
       if (activeTyreDegDropdown) {
@@ -5991,6 +6374,43 @@
     });
 
     document.getElementById("calculatorRunBtn").addEventListener("click", runCalculatorSimulation);
+
+    // Add event listeners to save calculator inputs to state
+    document.getElementById('calculatorPitLoss').addEventListener('input', function() {
+      saveToState('calculator.pitLoss', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorScLength').addEventListener('input', function() {
+      saveToState('calculator.scLength', parseInt(this.value) || null);
+    });
+    document.getElementById('calculatorFuelEffect').addEventListener('input', function() {
+      saveToState('calculator.fuelEffect', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorPaceS').addEventListener('input', function() {
+      saveToState('calculator.paceS', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorPaceM').addEventListener('input', function() {
+      saveToState('calculator.paceM', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorPaceH').addEventListener('input', function() {
+      saveToState('calculator.paceH', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorDegS').addEventListener('input', function() {
+      saveToState('calculator.degS', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorDegM').addEventListener('input', function() {
+      saveToState('calculator.degM', parseFloat(this.value) || null);
+    });
+    document.getElementById('calculatorDegH').addEventListener('input', function() {
+      saveToState('calculator.degH', parseFloat(this.value) || null);
+    });
+
+    // Save strategy inputs to state
+    document.querySelectorAll('.calculatorStrategyInput').forEach((input, idx) => {
+      input.addEventListener('input', function() {
+        const strategies = Array.from(document.querySelectorAll('.calculatorStrategyInput')).map(inp => inp.value);
+        saveToState('calculator.strategies', strategies);
+      });
+    });
 
     // Handle window resize for calculator charts
     window.addEventListener('resize', () => {
