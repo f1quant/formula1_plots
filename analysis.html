@@ -2009,8 +2009,11 @@
           calculateRaceTraceGaps(sessionData);
           buildRaceTraceDriverList();
 
-          // Restore driver selections from state (with validation)
-          restoreDataDependentSelections('race-trace');
+          // Restore driver selections from state AFTER building the list
+          // (so raceTraceDriverLines is populated)
+          if (selectedDrivers.size === 0) {
+            restoreDataDependentSelections('race-trace');
+          }
 
           // Update checkboxes to reflect current selection
           updateRaceTraceDriverCheckboxes();
@@ -2030,14 +2033,19 @@
 
           // Circuit config is now applied once per session in onSessionChange()
 
-          const filteredRows = applyLapTimeFilters(sessionData);
-          processLapTimeData(filteredRows);
+          // Determine finishing order from UNFILTERED data to get accurate positions
+          lapTimeDriverOrder = determineFinishingOrder(sessionData);
 
-          // Restore driver selections from state (with validation)
-          if (lapTimeCurrentGroups.size > 0) {
-            const drivers = Array.from(lapTimeCurrentGroups.keys());
+          // Then apply filters and process data with the correct order
+          const filteredRows = applyLapTimeFilters(sessionData);
+          processLapTimeData(filteredRows, lapTimeDriverOrder);
+
+          // Restore driver selections from state AFTER processing data
+          // (so lapTimeCurrentGroups is populated)
+          if (selectedDrivers.size === 0 && lapTimeCurrentGroups.size > 0) {
             restoreDataDependentSelections('lap-time');
             // Re-render to show the selected drivers
+            const drivers = Array.from(lapTimeCurrentGroups.keys());
             buildLapTimeDriversList(drivers);
             renderLapTimeChart();
           }
@@ -3050,6 +3058,7 @@
     let lapTimeYear = '';
     let lapTimeRound = '';
     let lapTimeSessionType = '';
+    let lapTimeDriverOrder = []; // Stores finishing order from unfiltered data
     let circuitConfig = {};
 
     // Load circuit config
@@ -3116,8 +3125,11 @@
 
     function onLapTimeFilterChange() {
       if (!currentSessionData || currentSessionData.length === 0) return;
+      // Determine finishing order from UNFILTERED data to get accurate positions
+      lapTimeDriverOrder = determineFinishingOrder(currentSessionData);
+      // Then apply filters and process data with the correct order
       const filteredRows = applyLapTimeFilters(currentSessionData);
-      processLapTimeData(filteredRows);
+      processLapTimeData(filteredRows, lapTimeDriverOrder);
     }
 
     function onLapTimeAdjustmentChange() {
@@ -3188,13 +3200,51 @@
       });
     }
 
-    function processLapTimeData(rows) {
+    /**
+     * Determine finishing order from unfiltered data
+     * This must be called before filters are applied to get accurate finishing positions
+     */
+    function determineFinishingOrder(unfilteredRows) {
+      const driverPositions = new Map();
+
+      unfilteredRows.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNumber = parseInt(r.lap_LapNumber);
+        const position = parseInt(r.lap_Position);
+
+        if (!driver || isNaN(lapNumber) || isNaN(position)) return;
+
+        if (!driverPositions.has(driver)) {
+          driverPositions.set(driver, {
+            driver: driver,
+            maxLapNum: 0,
+            lastPosition: null
+          });
+        }
+
+        const data = driverPositions.get(driver);
+        if (lapNumber > data.maxLapNum) {
+          data.maxLapNum = lapNumber;
+          data.lastPosition = position;
+        }
+      });
+
+      return sortDriversByFinishingOrder(Array.from(driverPositions.values()));
+    }
+
+    function processLapTimeData(rows, driverOrder) {
       if (!rows || rows.length === 0) {
         lapTimeCurrentGroups = new Map();
         lapTimeSelectedDrivers.clear();
         buildLapTimeDriversList([]);
         renderLapTimeChart();
         return;
+      }
+
+      // If no driver order provided, fall back to determining it from the rows
+      if (!driverOrder || driverOrder.length === 0) {
+        console.warn('No driver order provided to processLapTimeData, determining from filtered rows');
+        driverOrder = determineFinishingOrder(rows);
       }
 
       const driverData = new Map();
@@ -3205,7 +3255,6 @@
         const lapTime = parseFloat(r.lap_LapTime);
         const compound = String(r.lap_Compound || "").trim();
         const stint = String(r.lap_Stint || "").trim();
-        const position = parseInt(r.lap_Position);
         const tyreLife = parseInt(r.lap_TyreLife);
         const schedLaps = parseInt(r.sched_laps);
 
@@ -3214,9 +3263,7 @@
         if (!driverData.has(driver)) {
           driverData.set(driver, {
             driver: driver,
-            stints: new Map(),
-            maxLapNum: 0,
-            lastPosition: null
+            stints: new Map()
           });
         }
 
@@ -3237,22 +3284,18 @@
           tyreLife: tyreLife,
           schedLaps: schedLaps
         });
-
-        if (lapNumber > data.maxLapNum) {
-          data.maxLapNum = lapNumber;
-          data.lastPosition = position;
-        }
       });
 
-      const sortedDrivers = sortDriversByFinishingOrder(Array.from(driverData.values()));
-
+      // Use the pre-determined driver order
       const sortedDriverData = new Map();
-      sortedDrivers.forEach(d => {
-        sortedDriverData.set(d.driver, d.stints);
+      driverOrder.forEach(d => {
+        if (driverData.has(d.driver)) {
+          sortedDriverData.set(d.driver, driverData.get(d.driver).stints);
+        }
       });
       lapTimeCurrentGroups = sortedDriverData;
 
-      const drivers = sortedDrivers.map(d => d.driver);
+      const drivers = driverOrder.filter(d => driverData.has(d.driver)).map(d => d.driver);
 
       buildLapTimeDriversList(drivers);
       renderLapTimeChart();
