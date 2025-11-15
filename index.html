@@ -2910,48 +2910,112 @@
         session: {
           season: appState.session.season,
           gp: appState.session.gp,
-          session: appState.session.sessionType
+          sessionType: appState.session.sessionType
         },
         tab: appState.currentActiveTab,
         overrides
       };
     }
 
-    /**
-     * Encode permalink state to URL-safe base64
-     */
+    function serializeStateToPlainText(payload) {
+      const result = [];
+      function recurse(obj, prefix = '') {
+        Object.entries(obj).forEach(([key, value]) => {
+          if (value === undefined) return;
+          const path = prefix ? `${prefix}.${key}` : key;
+          if (value && typeof value === 'object' && !Array.isArray(value)) {
+            recurse(value, path);
+          } else if (Array.isArray(value)) {
+            result.push(`${path}=${JSON.stringify(value)}`);
+          } else {
+            result.push(`${path}=${value}`);
+          }
+        });
+      }
+      recurse(payload);
+      return result.join('&');
+    }
+
+    function assignPathValue(target, path, value) {
+      const keys = path.split('.');
+      let obj = target;
+      keys.forEach((key, idx) => {
+        if (idx === keys.length - 1) {
+          obj[key] = value;
+        } else {
+          if (!obj[key] || typeof obj[key] !== 'object') {
+            obj[key] = {};
+          }
+          obj = obj[key];
+        }
+      });
+    }
+
+    function parsePlainTextState(encoded) {
+      const decoded = encoded;
+      const payload = {};
+      const items = decoded.split('&').filter(Boolean);
+      if (!items.length) return payload;
+      items.forEach(item => {
+        const idx = item.indexOf('=');
+        if (idx < 0) return;
+        const key = item.slice(0, idx);
+        let value = item.slice(idx + 1);
+        const isSessionSeason = key === 'session.season';
+        let parsedValue;
+        if ((value.startsWith('[') && value.endsWith(']')) ||
+            (value.startsWith('{') && value.endsWith('}'))) {
+          try {
+            parsedValue = JSON.parse(value);
+          } catch (_) {
+            parsedValue = value;
+          }
+        } else if (value === 'true' || value === 'false') {
+          parsedValue = value === 'true';
+        } else if (!isSessionSeason && value !== '' && !Number.isNaN(Number(value))) {
+          parsedValue = Number(value);
+        } else {
+          parsedValue = value;
+        }
+        assignPathValue(payload, key, parsedValue);
+      });
+      return payload;
+    }
+
     function encodePermalinkState(payload) {
       try {
-        const json = JSON.stringify(payload);
-        const base64 = btoa(json);
-        // Make URL-safe: + -> -, / -> _, remove = padding
-        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        const plainText = serializeStateToPlainText(payload);
+        if (!plainText) return '';
+        return encodeURIComponent(plainText);
       } catch (e) {
         console.error('Failed to encode permalink state:', e);
         return null;
       }
     }
 
-    /**
-     * Decode permalink state from URL-safe base64
-     */
     function decodePermalinkState(encoded) {
       try {
-        // Restore standard base64: - -> +, _ -> /
+        const candidate = decodeURIComponent(encoded);
+        if (candidate.includes('=')) {
+          const overrides = parsePlainTextState(candidate);
+          const payload = {
+            v: overrides.v || 1,
+            session: overrides.session || { season: '', gp: '', session: '' },
+            tab: overrides.tab || 'strategy',
+            overrides
+          };
+          return payload;
+        }
         let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-        // Add padding if needed
         while (base64.length % 4) {
           base64 += '=';
         }
         const json = atob(base64);
         const payload = JSON.parse(json);
-
-        // Validate version
         if (payload.v !== 1) {
           console.warn('Unsupported permalink version:', payload.v);
           return null;
         }
-
         return payload;
       } catch (e) {
         console.error('Failed to decode permalink state:', e);
@@ -2964,13 +3028,10 @@
      */
     function generateAndCopyPermalink() {
       const payload = buildPermalinkPayload();
-      const encoded = encodePermalinkState(payload.overrides);
+      const encoded = encodePermalinkState(payload);
 
       if (encoded) {
         const params = new URLSearchParams();
-        params.set('season', payload.session.season);
-        params.set('gp', payload.session.gp);
-        params.set('session', payload.session.session);
         params.set('tab', payload.tab);
         params.set('s', encoded);
 
@@ -3233,9 +3294,6 @@
           break;
         case 'race-trace':
           raceTraceCurrentSessionRows = sessionData;
-          raceTraceYear = year;
-          raceTraceRound = round;
-          raceTraceSessionType = sessionType;
           raceTraceDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
           const lapNumbers = sessionData.map(r => parseInt(r.lap_LapNumber)).filter(n => !isNaN(n));
           const minLapNum = Math.min(...lapNumbers);
@@ -3430,8 +3488,6 @@
         }
       });
     }
-
-    
 
     function onSeasonChange() {
       const selectedSeason = seasonSel.value;
@@ -3782,9 +3838,6 @@ let raceTraceDriverLines = {};
 let raceTraceChart = null;
 let raceTraceCurrentSessionRows = [];
 let raceTraceDriverColors = new Map();
-let raceTraceYear = '';
-let raceTraceRound = '';
-let raceTraceSessionType = '';
 let raceTraceAvailableDrivers = [];
 let lapTimeAvailableDrivers = [];
 let raceTraceDriverManager = null;
@@ -4430,12 +4483,15 @@ function updateSelectedDrivers(mutator, options = {}) {
     });
 
     function getDriverInfo(code) {
-      // Get driver info for current session with proper parameters
-      if (!raceTraceYear || !raceTraceRound || !raceTraceSessionType) {
+      const { season, gp, sessionType } = appState.session;
+      if (!season || !gp || !sessionType) {
         return { fullName: code, color: '#888888', teamName: '', headshotUrl: '' };
       }
-
-      return DriverInfo.getDriverInfo(code, raceTraceYear, raceTraceRound, raceTraceSessionType);
+      const [round] = gp.split('||');
+      if (!round) {
+        return { fullName: code, color: '#888888', teamName: '', headshotUrl: '' };
+      }
+      return DriverInfo.getDriverInfo(code, season, round, sessionType);
     }
 
     function calculateRaceTraceGaps(rows) {
