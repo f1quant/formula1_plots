@@ -2343,14 +2343,8 @@
 
       // Calculator tab
       renderCalculatorInputsFromState();
-
-      // Calculator strategies
-      const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-      strategyInputs.forEach((input, index) => {
-        if (appState.calculator.strategies[index] !== undefined) {
-          input.value = appState.calculator.strategies[index];
-        }
-      });
+      renderCalculatorStrategyInputsFromState();
+      renderCalculatorScProbTableFromState();
     }
 
     /**
@@ -3090,6 +3084,17 @@
     let raceTraceSessionType = '';
     let raceTraceLapBounds = { min: 1, max: 1 };
 
+    const DEFAULT_SC_PROB_RANGES = [
+      { from: '1', to: '1', prob: '26.1' },
+      { from: '2', to: '2', prob: '4.9' },
+      { from: '3', to: '3', prob: '3.3' },
+      { from: '4', to: '', prob: '1.6' }
+    ];
+
+    function cloneDefaultScProbRanges() {
+      return DEFAULT_SC_PROB_RANGES.map(range => ({ ...range }));
+    }
+
     function renderPaceModelInputsFromState(options = {}) {
       const skipSet = new Set(options.skip || []);
       const degHard = document.getElementById('degHard');
@@ -3189,6 +3194,149 @@
       if (calculatorDegS && !skipSet.has('calculatorDegS')) calculatorDegS.value = appState.paceModel.degSoft;
       if (calculatorDegM && !skipSet.has('calculatorDegM')) calculatorDegM.value = appState.paceModel.degMedium;
       if (calculatorDegH && !skipSet.has('calculatorDegH')) calculatorDegH.value = appState.paceModel.degHard;
+    }
+
+    function renderCalculatorStrategyInputsFromState() {
+      const inputs = document.querySelectorAll('.calculatorStrategyInput');
+      let strategies = Array.isArray(appState.calculator.strategies)
+        ? appState.calculator.strategies
+        : [];
+      if (strategies.length < inputs.length) {
+        strategies = strategies.slice();
+        while (strategies.length < inputs.length) {
+          strategies.push('');
+        }
+        saveToState('calculator.strategies', strategies);
+      }
+      inputs.forEach((input, idx) => {
+        input.value = strategies[idx] || '';
+      });
+    }
+
+    function ensureCalculatorScProbRangesInitialized() {
+      if (!Array.isArray(appState.calculator.scProbRanges) || appState.calculator.scProbRanges.length === 0) {
+        const defaults = cloneDefaultScProbRanges();
+        saveToState('calculator.scProbRanges', defaults);
+        return defaults;
+      }
+      return appState.calculator.scProbRanges;
+    }
+
+    function renderCalculatorScProbTableFromState() {
+      const tbody = document.querySelector('#calculatorScProbTable tbody');
+      if (!tbody) return;
+      const ranges = ensureCalculatorScProbRangesInitialized();
+      tbody.innerHTML = '';
+      ranges.forEach((range, index) => {
+        const tr = document.createElement('tr');
+
+        const fromTd = document.createElement('td');
+        const fromInput = document.createElement('input');
+        fromInput.className = 'calculator-field-input calcFromLap';
+        fromInput.type = 'number';
+        fromInput.min = '1';
+        fromInput.value = range.from ?? '';
+        fromInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'from', e.target.value));
+        fromTd.appendChild(fromInput);
+
+        const toTd = document.createElement('td');
+        const toInput = document.createElement('input');
+        toInput.className = 'calculator-field-input calcToLap';
+        toInput.type = 'number';
+        toInput.min = '1';
+        toInput.value = range.to ?? '';
+        toInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'to', e.target.value));
+        toTd.appendChild(toInput);
+
+        const probTd = document.createElement('td');
+        const probInput = document.createElement('input');
+        probInput.className = 'calculator-field-input calcProb';
+        probInput.type = 'number';
+        probInput.step = '0.1';
+        probInput.min = '0';
+        probInput.max = '100';
+        probInput.value = range.prob ?? '';
+        probInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'prob', e.target.value));
+        probTd.appendChild(probInput);
+
+        const deleteTd = document.createElement('td');
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'calculator-btn-small calcDeleteRangeBtn';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', () => removeCalculatorScProbRange(index));
+        deleteTd.appendChild(deleteBtn);
+
+        tr.appendChild(fromTd);
+        tr.appendChild(toTd);
+        tr.appendChild(probTd);
+        tr.appendChild(deleteTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateCalculatorScProbRange(index, field, value) {
+      const ranges = Array.isArray(appState.calculator.scProbRanges)
+        ? appState.calculator.scProbRanges.slice()
+        : [];
+      if (!ranges[index]) return;
+      ranges[index] = { ...ranges[index], [field]: value };
+      saveToState('calculator.scProbRanges', ranges);
+    }
+
+    function addCalculatorScProbRow(initial = { from: '', to: '', prob: '' }) {
+      const ranges = Array.isArray(appState.calculator.scProbRanges)
+        ? appState.calculator.scProbRanges.slice()
+        : [];
+      ranges.push({
+        from: initial.from ?? '',
+        to: initial.to ?? '',
+        prob: initial.prob ?? ''
+      });
+      saveToState('calculator.scProbRanges', ranges);
+      renderCalculatorScProbTableFromState();
+    }
+
+    function removeCalculatorScProbRange(index) {
+      const ranges = Array.isArray(appState.calculator.scProbRanges)
+        ? appState.calculator.scProbRanges.slice()
+        : [];
+      if (ranges.length === 0) return;
+      ranges.splice(index, 1);
+      if (ranges.length === 0) {
+        ranges.push({ from: '', to: '', prob: '' });
+      }
+      saveToState('calculator.scProbRanges', ranges);
+      renderCalculatorScProbTableFromState();
+    }
+
+    function getCalculatorScProbRangesFromState() {
+      const ranges = Array.isArray(appState.calculator.scProbRanges)
+        ? appState.calculator.scProbRanges
+        : [];
+      const parsed = [];
+      ranges.forEach(range => {
+        const fromVal = String(range.from ?? '').trim();
+        const toVal = String(range.to ?? '').trim();
+        const probVal = String(range.prob ?? '').trim();
+        if (!fromVal || !probVal) return;
+        const fromLap = parseInt(fromVal, 10);
+        const toLap = toVal === '' ? null : parseInt(toVal, 10);
+        const prob = parseFloat(probVal);
+        if (!Number.isFinite(fromLap) || fromLap <= 0) return;
+        if (toLap !== null && (!Number.isFinite(toLap) || toLap < fromLap)) return;
+        if (!Number.isFinite(prob) || prob < 0) return;
+        parsed.push([fromLap, toLap, prob / 100]);
+      });
+
+      if (parsed.length === 0) {
+        throw new Error('Define at least one SC probability range.');
+      }
+      const last = parsed[parsed.length - 1];
+      if (last[1] !== null) {
+        throw new Error('Last SC probability range must leave "To lap" blank (open-ended).');
+      }
+      return parsed;
     }
 
     function updateTyreDegFilterState(key, rawValue) {
@@ -7361,61 +7509,22 @@
       return patterns;
     }
 
-    // SC Probability Table Management
-    function addCalculatorScProbRow(from = "", to = "", prob = "") {
-      const tbody = document.querySelector("#calculatorScProbTable tbody");
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><input class="calculator-field-input calcFromLap" type="number" min="1" value="${from}"></td>
-        <td><input class="calculator-field-input calcToLap" type="number" min="1" value="${to}"></td>
-        <td><input class="calculator-field-input calcProb" type="number" step="0.1" min="0" max="100" value="${prob}"></td>
-        <td><button type="button" class="calculator-btn-small calcDeleteRangeBtn">✕</button></td>
-      `;
-      tbody.appendChild(tr);
-    }
-
-    function readCalculatorScProbRanges() {
-      const rows = document.querySelectorAll("#calculatorScProbTable tbody tr");
-      const ranges = [];
-      rows.forEach((row) => {
-        const fromVal = row.querySelector(".calcFromLap").value.trim();
-        const toVal = row.querySelector(".calcToLap").value.trim();
-        const pVal = row.querySelector(".calcProb").value.trim();
-        if (!fromVal || !pVal) return;
-        const fromLap = parseInt(fromVal, 10);
-        let toLap = null;
-        if (toVal !== "") {
-          toLap = parseInt(toVal, 10);
-        }
-        const prob = parseFloat(pVal);
-        ranges.push([fromLap, isNaN(toLap) ? null : toLap, prob / 100]);
-      });
-
-      if (ranges.length === 0) {
-        throw new Error("Define at least one SC probability range.");
-      }
-      const last = ranges[ranges.length - 1];
-      if (last[1] !== null) {
-        throw new Error('Last SC probability range must leave "To lap" blank (open-ended).');
-      }
-      return ranges;
-    }
-
     function getCalculatorStrategyPatterns() {
-      const inputs = document.querySelectorAll(".calculatorStrategyInput");
-      const strategies = [];
-      inputs.forEach((input) => {
-        const raw = input.value.trim();
+      const strategies = Array.isArray(appState.calculator.strategies)
+        ? appState.calculator.strategies
+        : [];
+      const parsed = [];
+      strategies.forEach((raw) => {
         if (!raw) return;
         const tokens = raw
-          .split(/[,\s>\-]+/)
+          .split(/[\,\s>\-]+/)
           .map((t) => t.trim().toUpperCase())
           .filter((t) => t);
         if (tokens.length < 2 || tokens.length > 4) return;
-        if (!tokens.every((t) => t === "S" || t === "M" || t === "H")) return;
-        strategies.push(tokens);
+        if (!tokens.every((t) => t === 'S' || t === 'M' || t === 'H')) return;
+        parsed.push(tokens);
       });
-      return strategies.slice(0, 5);
+      return parsed.slice(0, 5);
     }
 
     // Chart Updates
@@ -7640,7 +7749,7 @@
           }
         }
 
-        const scProbRanges = readCalculatorScProbRanges();
+        const scProbRanges = getCalculatorScProbRangesFromState();
 
         const compoundIndices = compounds.map((_, i) => i);
         const typeToIdx = {};
@@ -7758,15 +7867,15 @@
           return;
         }
 
-        const scProbRanges = readCalculatorScProbRanges();
+        const scProbRanges = getCalculatorScProbRangesFromState();
         const patterns = calcComputeFreePatterns(
           numLaps, compounds, fuelEffect, scProbRanges, scLength, pitLoss
         ).slice(0, 3);
 
-        const inputs = document.querySelectorAll(".calculatorStrategyInput");
-        for (let i = 0; i < patterns.length && i < inputs.length; i++) {
-          inputs[i].value = patterns[i].join(",");
-        }
+        const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
+        const nextStrategies = Array.from(strategyInputs, (_, idx) => patterns[idx] ? patterns[idx].join(',') : '');
+        saveToState('calculator.strategies', nextStrategies);
+        renderCalculatorStrategyInputsFromState();
       } catch (_) {
         // Leave as-is if seeding fails.
       }
@@ -7782,6 +7891,8 @@
       // Get num laps from session data
       const schedLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : 71;
       document.getElementById("calculatorNumLaps").value = isNaN(schedLaps) ? 71 : schedLaps;
+
+      const isRestoringPermalink = window.permalinkSession && window.permalinkSession.isRestoring;
 
       // Load circuit config if available
       if (circuitName && calculatorConfigData[circuitName]) {
@@ -7819,42 +7930,34 @@
         // Load strategies of interest if available
         let strategiesLoaded = false;
         const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-
-        // Check if we have strategies from URL/state first
         const hasStateStrategies = appState.calculator.strategies &&
           appState.calculator.strategies.some(s => s && s.trim() !== '');
 
         if (hasStateStrategies) {
-          // Use strategies from state (URL parameters)
-          appState.calculator.strategies.forEach((strategy, index) => {
-            if (index < strategyInputs.length) {
-              strategyInputs[index].value = strategy || '';
-            }
-          });
+          renderCalculatorStrategyInputsFromState();
           strategiesLoaded = true;
         } else if (config['Strategies Of Interest'] && config['Strategies Of Interest'][0]) {
-          // Fall back to config strategies
-          const strategies = config['Strategies Of Interest'][0];
-
-          // Clear all strategy inputs first
-          strategyInputs.forEach(input => input.value = '');
-
-          // Populate with strategies from config
-          strategies.forEach((strategy, index) => {
-            if (index < strategyInputs.length) {
-              strategyInputs[index].value = strategy;
+          const strategies = Array.from(strategyInputs, () => '');
+          const configStrategies = config['Strategies Of Interest'][0];
+          configStrategies.forEach((strategy, index) => {
+            if (index < strategies.length) {
+              strategies[index] = strategy;
             }
           });
+          saveToState('calculator.strategies', strategies);
+          renderCalculatorStrategyInputsFromState();
           strategiesLoaded = true;
+        } else if (!isRestoringPermalink) {
+          const emptyStrategies = Array.from(strategyInputs, () => '');
+          saveToState('calculator.strategies', emptyStrategies);
+          renderCalculatorStrategyInputsFromState();
         }
 
-        // Initialize SC probability table
-        const tbody = document.querySelector("#calculatorScProbTable tbody");
-        tbody.innerHTML = "";
-        addCalculatorScProbRow(1, 1, 26.1);
-        addCalculatorScProbRow(2, 2, 4.9);
-        addCalculatorScProbRow(3, 3, 3.3);
-        addCalculatorScProbRow(4, "", 1.6);
+        if (!isRestoringPermalink) {
+          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
+        }
+        renderCalculatorScProbTableFromState();
+        renderCalculatorStrategyInputsFromState();
 
         // Seed patterns only if not loaded from config
         if (!strategiesLoaded) {
@@ -7881,13 +7984,11 @@
           renderCalculatorInputsFromState();
         }
 
-        // Initialize SC probability table
-        const tbody = document.querySelector("#calculatorScProbTable tbody");
-        tbody.innerHTML = "";
-        addCalculatorScProbRow(1, 1, 26.1);
-        addCalculatorScProbRow(2, 2, 4.9);
-        addCalculatorScProbRow(3, 3, 3.3);
-        addCalculatorScProbRow(4, "", 1.6);
+        if (!isRestoringPermalink) {
+          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
+        }
+        renderCalculatorScProbTableFromState();
+        renderCalculatorStrategyInputsFromState();
 
         // Seed patterns from free optimization (no config available)
         seedCalculatorPatternsFromFree();
@@ -7898,13 +7999,6 @@
     // Set up calculator event listeners
     document.getElementById("calculatorAddRangeBtn")
       .addEventListener("click", () => addCalculatorScProbRow());
-
-    document.addEventListener("click", (e) => {
-      if (e.target.classList.contains("calcDeleteRangeBtn")) {
-        const tr = e.target.closest("tr");
-        if (tr && tr.parentNode) tr.parentNode.removeChild(tr);
-      }
-    });
 
     document.getElementById("calculatorRunBtn").addEventListener("click", runCalculatorSimulation);
 
@@ -7994,9 +8088,13 @@
     });
 
     // Save strategy inputs to state
-    document.querySelectorAll('.calculatorStrategyInput').forEach((input, idx) => {
+    const calculatorStrategyInputs = document.querySelectorAll('.calculatorStrategyInput');
+    calculatorStrategyInputs.forEach((input, idx) => {
       input.addEventListener('input', function() {
-        const strategies = Array.from(document.querySelectorAll('.calculatorStrategyInput')).map(inp => inp.value);
+        const strategies = Array.isArray(appState.calculator.strategies)
+          ? appState.calculator.strategies.slice()
+          : new Array(calculatorStrategyInputs.length).fill('');
+        strategies[idx] = this.value;
         saveToState('calculator.strategies', strategies);
       });
     });
