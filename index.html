@@ -2594,12 +2594,8 @@
 
           // Circuit config is now applied once per session in onSessionChange()
 
-          // Determine finishing order from UNFILTERED data to get accurate positions
-          lapTimeDriverOrder = determineFinishingOrder(sessionData);
-
-          // Then apply filters and process data with the correct order
-          const filteredRows = applyLapFilters(sessionData);
-          processLapTimeData(filteredRows, lapTimeDriverOrder);
+          // Process lap time data with shared filters
+          processLapTimeData(sessionData);
 
           // Restore driver selections from state AFTER processing data
           // (so lapTimeCurrentGroups is populated)
@@ -2629,30 +2625,11 @@
             tyreDegTyreChoicesDisplay.style.display = 'none';
           }
 
-          // Circuit config is now applied once per session in onSessionChange()
-
           processTyreDegData(sessionData);
           break;
         case 'fuel-effect':
           // Initialize fuel effect panel
-          const filteredFuelEffectRows = applyLapFilters(sessionData);
-
-          // Build table first (populates fuelEffectFilteredGroups)
-          displayFuelEffectGroupsTable(filteredFuelEffectRows);
-
-          // Restore row selections from state (validates against current filtered data)
-          // This may contain selections from URL that need to be preserved
-          restoreDataDependentSelections('fuel-effect');
-
-          // Auto-select all rows only if no valid selections were restored
-          if (appState.fuelEffect.selectedRows.size === 0) {
-            fuelEffectFilteredGroups.forEach((group, key) => {
-              appState.fuelEffect.selectedRows.add(key);
-            });
-          }
-
-          // Re-render table and chart to reflect selections
-          displayFuelEffectGroupsTable(filteredFuelEffectRows);
+          processFuelEffectData(sessionData, { restoreSelections: true });
           break;
         case 'calculator':
           // Initialize calculator panel
@@ -3912,15 +3889,6 @@
 
     setupLapTimeFilterListeners();
 
-    function onLapTimeFilterChange() {
-      if (!currentSessionData || currentSessionData.length === 0) return;
-      // Determine finishing order from UNFILTERED data to get accurate positions
-      lapTimeDriverOrder = determineFinishingOrder(currentSessionData);
-      // Then apply filters and process data with the correct order
-      const filteredRows = applyLapFilters(currentSessionData);
-      processLapTimeData(filteredRows, lapTimeDriverOrder);
-    }
-
     function onLapTimeAdjustmentChange() {
       if (lapTimeCurrentGroups.size > 0) {
         renderLapTimeChart();
@@ -4004,7 +3972,7 @@
       });
     }
 
-    function applyLapFilters(rows) {
+    function applySharedFilters(rows) {
       const {
         minLap: rawMinLap,
         endLaps: rawEndLaps,
@@ -4153,13 +4121,12 @@
       renderSharedFiltersFromState();
 
       if (lapTimeCurrentSessionRows && lapTimeCurrentSessionRows.length > 0) {
-        onLapTimeFilterChange();
+        processLapTimeData(lapTimeCurrentSessionRows);
       }
 
       if (currentSessionData && currentSessionData.length > 0) {
         processTyreDegData(currentSessionData);
-        const filteredFuelEffectRows = applyLapFilters(currentSessionData);
-        displayFuelEffectGroupsTable(filteredFuelEffectRows);
+        processFuelEffectData(currentSessionData);
       }
     }
 
@@ -4218,7 +4185,20 @@
       return sortDriversByFinishingOrder(Array.from(driverPositions.values()));
     }
 
-    function processLapTimeData(rows, driverOrder) {
+    function processLapTimeData(sessionData) {
+      if (!sessionData || sessionData.length === 0) {
+        lapTimeDriverOrder = [];
+        lapTimeCurrentGroups = new Map();
+        lapTimeSelectedDrivers.clear();
+        buildLapTimeDriversList([]);
+        renderLapTimeChart();
+        renderLapTimeSummaryTable();
+        return;
+      }
+
+      lapTimeDriverOrder = determineFinishingOrder(sessionData);
+      const rows = applySharedFilters(sessionData);
+
       if (!rows || rows.length === 0) {
         lapTimeCurrentGroups = new Map();
         lapTimeSelectedDrivers.clear();
@@ -4228,6 +4208,7 @@
         return;
       }
 
+      let driverOrder = lapTimeDriverOrder;
       // If no driver order provided, fall back to determining it from the rows
       if (!driverOrder || driverOrder.length === 0) {
         console.warn('No driver order provided to processLapTimeData, determining from filtered rows');
@@ -5396,7 +5377,7 @@
     });
 
     function processTyreDegData(sessionData) {
-      const filteredRows = applyLapFilters(sessionData);
+      const filteredRows = applySharedFilters(sessionData);
 
       // Group by driver and stint
       const groups = new Map();
@@ -6324,6 +6305,39 @@
     let fuelEffectPreviousFilteredKeys = []; // Remember which keys were visible last time
     const fuelEffectDropdownState = { dropdown: null, column: null };
 
+    function processFuelEffectData(sessionData, options = {}) {
+      const { restoreSelections = false } = options;
+
+      if (!sessionData || sessionData.length === 0) {
+        fuelEffectFilteredGroups = new Map();
+        fuelEffectPreviousFilteredKeys = [];
+        fuelEffectGroupsTableContainer.innerHTML = '';
+        fuelEffectCoefficientsGrid.innerHTML = '';
+        if (fuelEffectChart) {
+          fuelEffectChart.dispose();
+          fuelEffectChart = null;
+        }
+        return [];
+      }
+
+      const filteredRows = applySharedFilters(sessionData);
+      displayFuelEffectGroupsTable(filteredRows);
+
+      if (restoreSelections) {
+        restoreDataDependentSelections('fuel-effect');
+
+        if (appState.fuelEffect.selectedRows.size === 0) {
+          fuelEffectFilteredGroups.forEach((group, key) => {
+            appState.fuelEffect.selectedRows.add(key);
+          });
+        }
+
+        displayFuelEffectGroupsTable(filteredRows);
+      }
+
+      return filteredRows;
+    }
+
     // Handle window resize for fuel effect chart
     window.addEventListener('resize', () => {
       if (fuelEffectChart) {
@@ -6857,8 +6871,7 @@
 
       // Refresh table and chart
       if (currentSessionData && currentSessionData.length > 0) {
-        const filteredRows = applyLapFilters(currentSessionData);
-        displayFuelEffectGroupsTable(filteredRows);
+        processFuelEffectData(currentSessionData);
       }
     }
 
