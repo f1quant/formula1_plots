@@ -2357,16 +2357,13 @@
       const tyreDegFuelAdjustToggle = document.getElementById('tyreDegFuelAdjustToggle');
       const tyreDegFuelEffectSlider = document.getElementById('tyreDegFuelEffectSlider');
       const tyreDegFuelEffectValue = document.getElementById('tyreDegFuelEffectValue');
-      const tyreDegFilterMinRows = document.getElementById('tyreDegFilterMinRows');
-      const tyreDegFilterMinCorr = document.getElementById('tyreDegFilterMinCorr');
 
       if (tyreDegFuelAdjustToggle) tyreDegFuelAdjustToggle.classList.toggle('active', appState.tyreDeg.fuelAdjust);
       if (tyreDegFuelEffectSlider) {
         tyreDegFuelEffectSlider.value = appState.paceModel.fuelEffect;
         if (tyreDegFuelEffectValue) tyreDegFuelEffectValue.textContent = appState.paceModel.fuelEffect.toFixed(3);
       }
-      if (tyreDegFilterMinRows) tyreDegFilterMinRows.value = appState.tyreDeg.filterMinRows;
-      if (tyreDegFilterMinCorr) tyreDegFilterMinCorr.value = appState.tyreDeg.filterMinCorr;
+      renderTyreDegFilterInputsFromState();
 
       // Calculator tab
       const calculatorPitLoss = document.getElementById('calculatorPitLoss');
@@ -3147,6 +3144,52 @@
     let raceTraceRound = '';
     let raceTraceSessionType = '';
     let raceTraceLapBounds = { min: 1, max: 1 };
+
+    function renderTyreDegFilterInputsFromState() {
+      const tyreDegFilterMinRows = document.getElementById('tyreDegFilterMinRows');
+      const tyreDegFilterMinCorr = document.getElementById('tyreDegFilterMinCorr');
+      if (tyreDegFilterMinRows) {
+        const val = appState.tyreDeg.filterMinRows;
+        tyreDegFilterMinRows.value = (val === null || val === undefined) ? '' : val;
+      }
+      if (tyreDegFilterMinCorr) {
+        const val = appState.tyreDeg.filterMinCorr;
+        tyreDegFilterMinCorr.value = (val === null || val === undefined) ? '' : val;
+      }
+    }
+
+    function updateTyreDegFilterState(key, rawValue) {
+      const rawText = rawValue !== undefined && rawValue !== null ? String(rawValue).trim() : '';
+      const previousValue = appState.tyreDeg[key];
+
+      if (rawText === '') {
+        if (!Object.is(previousValue, null)) {
+          saveToState(`tyreDeg.${key}`, null);
+        }
+        return null;
+      }
+
+      let parsedValue;
+      if (key === 'filterMinRows') {
+        const parsed = parseInt(rawText, 10);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+          return previousValue;
+        }
+        parsedValue = parsed;
+      } else {
+        const parsed = parseFloat(rawText);
+        if (!Number.isFinite(parsed)) {
+          return previousValue;
+        }
+        parsedValue = parsed;
+      }
+
+      if (!Object.is(parsedValue, previousValue)) {
+        saveToState(`tyreDeg.${key}`, parsedValue);
+      }
+
+      return parsedValue;
+    }
 
     function setRaceTraceLapBounds(minLap, maxLap) {
       const clampedMin = Number.isFinite(minLap) ? minLap : 1;
@@ -5226,25 +5269,26 @@
 
     // Set up filter listeners for tyre deg panel
     function setupTyreDegFilterListeners() {
-      const filterIds = ['tyreDegFilterMinRows', 'tyreDegFilterMinCorr'];
+      const minRowsInput = document.getElementById('tyreDegFilterMinRows');
+      const minCorrInput = document.getElementById('tyreDegFilterMinCorr');
 
-      filterIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          const eventType = el.type === 'checkbox' ? 'change' : 'input';
-          el.addEventListener(eventType, () => {
-            // Save tyre deg specific filters to state
-            if (id === 'tyreDegFilterMinRows') {
-              saveToState('tyreDeg.filterMinRows', parseInt(el.value));
-            } else if (id === 'tyreDegFilterMinCorr') {
-              saveToState('tyreDeg.filterMinCorr', parseFloat(el.value));
-            }
-            if (currentSessionData && currentSessionData.length > 0) {
-              processTyreDegData(currentSessionData);
-            }
-          });
-        }
-      });
+      if (minRowsInput) {
+        minRowsInput.addEventListener('input', () => {
+          updateTyreDegFilterState('filterMinRows', minRowsInput.value);
+          if (currentSessionData && currentSessionData.length > 0) {
+            processTyreDegData(currentSessionData);
+          }
+        });
+      }
+
+      if (minCorrInput) {
+        minCorrInput.addEventListener('input', () => {
+          updateTyreDegFilterState('filterMinCorr', minCorrInput.value);
+          if (currentSessionData && currentSessionData.length > 0) {
+            processTyreDegData(currentSessionData);
+          }
+        });
+      }
 
       // Fuel effect slider
       const slider = document.getElementById('tyreDegFuelEffectSlider');
@@ -5459,8 +5503,12 @@
       });
 
       // Calculate regression for each group
-      const minRows = parseInt(document.getElementById('tyreDegFilterMinRows').value);
-      const minCorr = parseFloat(document.getElementById('tyreDegFilterMinCorr').value);
+      const minRows = Number.isFinite(appState.tyreDeg.filterMinRows)
+        ? appState.tyreDeg.filterMinRows
+        : 5;
+      const minCorr = Number.isFinite(appState.tyreDeg.filterMinCorr)
+        ? appState.tyreDeg.filterMinCorr
+        : -1.0;
 
       // Track previous stints
       const previousStints = new Set(window.tyreDegPreviousFilteredStints || []);
