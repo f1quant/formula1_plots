@@ -893,22 +893,59 @@
 
     .pit-loss-header {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      justify-content: center; /* center the inner container so it lines up with the table */
       margin-bottom: 12px;
     }
 
+    /* inner container sized to match the table's max-width so header items align */
+    .pit-loss-header .pit-loss-inner {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .pit-loss-header .pit-loss-stats {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
     .pit-loss-stat {
-      font-size: 14px;
-      font-weight: 600;
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      font-size: 13px;
+      color: var(--muted-color);
+    }
+
+    .pit-loss-stat .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-color);
+      margin-right: 6px;
+    }
+
+    .pit-loss-stat .value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-color);
+      text-shadow: 0 0 10px rgba(0, 224, 255, 0.25);
     }
 
     .pit-loss-table {
       width: 100%;
+      max-width: 760px; /* keep the table narrower than the panel */
+      table-layout: fixed;
       border-collapse: collapse;
-      margin-top: 12px;
+      margin: 12px auto 0 auto;
+      font-size: 13px;
+      background: rgba(0,0,0,0.02);
+      border-radius: 8px;
+      overflow: hidden;
     }
 
     .pit-loss-table th,
@@ -916,18 +953,40 @@
       padding: 8px 10px;
       border: 1px solid var(--border-color);
       text-align: left;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
+    /* Make header narrower and more compact */
     .pit-loss-table th {
       background: rgba(0, 224, 255, 0.04);
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-weight: 600;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      color: var(--accent-color);
+    }
+
+    /* Column width hints */
+    .pit-loss-table th:nth-child(1) { width: 56px; }
+    .pit-loss-table th:nth-child(2) { width: 180px; }
+    .pit-loss-table th:nth-child(3) { width: 64px; }
+    .pit-loss-table th:nth-child(4) { width: 96px; }
+
+    /* On small screens let the table expand to full width */
+    @media (max-width: 820px) {
+      .pit-loss-table { max-width: 100%; margin: 12px 0 0 0; }
+      .pit-loss-table th:nth-child(2) { width: 140px; }
+      .pit-loss-table th:nth-child(4) { width: 90px; }
     }
 
     .pit-loss-checkbox {
       margin-right: 8px;
+    }
+    .pit-loss-table tbody tr.selected {
+      background: rgba(0, 224, 255, 0.06);
     }
 
     .header-dropdown.show {
@@ -1853,11 +1912,15 @@
     <!-- Pit Loss Panel -->
     <div id="pit-loss-panel" class="content-panel">
       <div class="pit-loss-header">
-        <div>
-          <div class="pit-loss-stat">Average Pit Loss: <span id="pitLossAverage">—</span> s</div>
-          <div class="pit-loss-stat">Median Pit Loss: <span id="pitLossMedian">—</span> s</div>
+        <div class="pit-loss-inner">
+          <div class="pit-loss-stats">
+            <div class="pit-loss-stat"><span class="label">Average</span><span class="value"><span id="pitLossAverage">—</span> s</span></div>
+            <div class="pit-loss-stat"><span class="label">Median</span><span class="value"><span id="pitLossMedian">—</span> s</span></div>
+          </div>
+          <div>
+            <button id="copyPitLossAverageBtn" type="button" class="calculator-run-btn" style="padding: 8px 14px; font-size: 12px;">Copy Median to Calculator</button>
+          </div>
         </div>
-        <button id="copyPitLossAverageBtn" type="button" class="calculator-run-btn" style="padding: 8px 14px; font-size: 12px;">Copy Median to Calculator</button>
       </div>
       <div id="pitLossTableContainer"></div>
     </div>
@@ -6390,7 +6453,20 @@ function updateSelectedDrivers(mutator, options = {}) {
         row.appendChild(selectTd);
 
         const driverTd = document.createElement('td');
-        driverTd.textContent = event.driver;
+        // Lookup driver full name and color (fall back gracefully)
+        const info = (typeof DriverInfo !== 'undefined' && DriverInfo.getDriverInfo)
+          ? DriverInfo.getDriverInfo(event.driver, event.year, event.round, event.sessionType)
+          : { fullName: event.driver, color: '#888888' };
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = info.fullName || event.driver;
+        // Color the driver name with their team/driver color
+        nameSpan.style.color = info.color || '#888888';
+        nameSpan.style.fontWeight = '600';
+        nameSpan.style.verticalAlign = 'middle';
+        nameSpan.style.whiteSpace = 'nowrap';
+
+        driverTd.appendChild(nameSpan);
         row.appendChild(driverTd);
 
         const pitTd = document.createElement('td');
@@ -6448,7 +6524,12 @@ function updateSelectedDrivers(mutator, options = {}) {
         driverLaps.get(driver).push(row);
       });
 
-      const events = [];
+  const events = [];
+  // derive session identifiers from the data so we can lookup driver metadata
+  const firstRow = rows.length > 0 ? rows[0] : null;
+  const sessYear = firstRow ? String(firstRow.year || "").trim() : '';
+  const sessRound = firstRow ? String(firstRow.round_no || "").trim() : '';
+  const sessType = firstRow ? String(firstRow.session_type || "").trim() : '';
       driverLaps.forEach((rows, driver) => {
         const sortedRows = rows.slice().sort((a, b) => {
           const aLap = parseFloat(a.lap_LapNumber);
@@ -6485,13 +6566,16 @@ function updateSelectedDrivers(mutator, options = {}) {
           const afterLap = lapLookup.get(pitInLapNum + 2);
           const pitLoss = parseFloat(pitInLap.lap_LapTime) + parseFloat(pitOutLap.lap_LapTime) - (parseFloat(beforeLap.lap_LapTime) + parseFloat(afterLap.lap_LapTime));
 
-          events.push({
-            key: `${driver}||${pitInLapNum}||${pitIndex}`,
-            pitInLapNum,
-            driver,
-            pitIndex,
-            pitLoss,
-          });
+            events.push({
+              key: `${driver}||${pitInLapNum}||${pitIndex}`,
+              pitInLapNum,
+              driver,
+              pitIndex,
+              pitLoss,
+              year: sessYear,
+              round: sessRound,
+              sessionType: sessType
+            });
           pitIndex++;
         }
       });
