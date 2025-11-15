@@ -49,6 +49,35 @@
       transform: translateY(-1px);
     }
 
+    .tab-button[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      padding: 10px 14px;
+      background: rgba(26, 29, 36, 0.96);
+      color: var(--text-color);
+      border: 1px solid var(--accent-color);
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 8px;
+      width: 350px;
+      white-space: normal;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    .tab-button[data-tooltip]:hover::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(4px);
+      transition-delay: 0.3s;
+    }
+
     .tab-button.active {
       color: #fff;
       background: linear-gradient(135deg, rgba(0, 224, 255, 0.15), rgba(0, 180, 255, 0.1));
@@ -1245,7 +1274,7 @@
     <div class="tab-navigation">
       <button class="tab-button active" data-tab="strategy">Strategy</button>
       <button class="tab-button" data-tab="race-trace">Race Trace</button>
-      <button class="tab-button" data-tab="fuel-effect">Fuel Effect</button>
+      <button class="tab-button" data-tab="fuel-effect" data-tooltip="Compares laps for the same driver, compound, and tyre life at different fuel loads to calculate fuel effect. Click 'Select Fuel Effect' to apply the coefficient to other tabs.">Fuel Effect</button>
       <button class="tab-button" data-tab="tyre-deg">Tyre Degradation</button>
       <button class="tab-button" data-tab="lap-time">Lap Time</button>
       <button class="tab-button" data-tab="calculator">Calculator</button>
@@ -1556,7 +1585,7 @@
     <div id="fuel-effect-panel" class="content-panel">
       <div style="display: flex; gap: 16px; margin-bottom: 16px;">
         <!-- LEFT: Filters -->
-        <div style="flex: 0 0 320px;">
+        <div style="flex: 0 0 275px;">
           <!-- Lap Filters -->
           <div class="filter-panel" style="margin-bottom: 16px;">
             <div class="filters-title">Lap Filters</div>
