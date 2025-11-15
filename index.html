@@ -2942,12 +2942,21 @@
     /**
      * Encode permalink state to URL-safe base64
      */
+    function insertPlusEvery50(str) {
+      return str.replace(/(.{50})/g, '$1+');
+    }
+
+    function removeInsertedPlus(str) {
+      return str.replace(/\+/g, '');
+    }
+
     function encodePermalinkState(payload) {
       try {
         const json = JSON.stringify(payload);
         const base64 = btoa(json);
         // Make URL-safe: + -> -, / -> _, remove = padding
-        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        const sanitized = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        return insertPlusEvery50(sanitized);
       } catch (e) {
         console.error('Failed to encode permalink state:', e);
         return null;
@@ -2959,8 +2968,9 @@
      */
     function decodePermalinkState(encoded) {
       try {
+        const withoutPluses = removeInsertedPlus(encoded);
         // Restore standard base64: - -> +, _ -> /
-        let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+        let base64 = withoutPluses.replace(/-/g, '+').replace(/_/g, '/');
         // Add padding if needed
         while (base64.length % 4) {
           base64 += '=';
