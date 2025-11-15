@@ -1861,6 +1861,7 @@
 
       // Calculator tab
       calculator: {
+        numLaps: null,
         strategies: ['', '', '', '', ''],
         pitLoss: null,
         scLength: null,
@@ -1935,6 +1936,7 @@
 
       // Calculator tab
       calculator: {
+        numLaps: null,
         strategies: ['', '', '', '', ''], // Array of strategy strings
         pitLoss: null,
         scLength: null,
@@ -3162,12 +3164,18 @@
       const skipSet = new Set(options.skip || []);
       const calculatorPitLoss = document.getElementById('calculatorPitLoss');
       const calculatorScLength = document.getElementById('calculatorScLength');
+      const calculatorNumLaps = document.getElementById('calculatorNumLaps');
       const calculatorPaceS = document.getElementById('calculatorPaceS');
       const calculatorPaceM = document.getElementById('calculatorPaceM');
       const calculatorPaceH = document.getElementById('calculatorPaceH');
       const calculatorDegS = document.getElementById('calculatorDegS');
       const calculatorDegM = document.getElementById('calculatorDegM');
       const calculatorDegH = document.getElementById('calculatorDegH');
+
+      if (calculatorNumLaps && !skipSet.has('calculatorNumLaps')) {
+        const value = appState.calculator.numLaps;
+        calculatorNumLaps.value = value === null || value === undefined ? '' : value;
+      }
 
       if (calculatorPitLoss && !skipSet.has('calculatorPitLoss')) {
         const value = appState.calculator.pitLoss;
@@ -3282,6 +3290,7 @@
       if (!ranges[index]) return;
       ranges[index] = { ...ranges[index], [field]: value };
       saveToState('calculator.scProbRanges', ranges);
+      renderCalculatorScProbTableFromState();
     }
 
     function addCalculatorScProbRow(initial = { from: '', to: '', prob: '' }) {
@@ -7728,7 +7737,10 @@
       errorBox.textContent = "";
 
       try {
-        const numLaps = parseInt(document.getElementById("calculatorNumLaps").value, 10);
+        const numLapsState = appState.calculator.numLaps;
+        const numLaps = Number.isFinite(numLapsState)
+          ? numLapsState
+          : parseInt(document.getElementById("calculatorNumLaps").value, 10);
         const fuelEffect = appState.paceModel.fuelEffect;
         const scLength = appState.calculator.scLength;
         const pitLoss = appState.calculator.pitLoss;
@@ -7850,7 +7862,10 @@
 
     function seedCalculatorPatternsFromFree() {
       try {
-        const numLaps = parseInt(document.getElementById("calculatorNumLaps").value, 10);
+        const numLapsState = appState.calculator.numLaps;
+        const numLaps = Number.isFinite(numLapsState)
+          ? numLapsState
+          : parseInt(document.getElementById("calculatorNumLaps").value, 10);
         const fuelEffect = appState.paceModel.fuelEffect;
         const scLength = appState.calculator.scLength;
         const pitLoss = appState.calculator.pitLoss;
@@ -7889,10 +7904,12 @@
       const circuitName = sessionData.length > 0 ? String(sessionData[0].circuit_name || "").trim() : "";
 
       // Get num laps from session data
-      const schedLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : 71;
-      document.getElementById("calculatorNumLaps").value = isNaN(schedLaps) ? 71 : schedLaps;
-
       const isRestoringPermalink = window.permalinkSession && window.permalinkSession.isRestoring;
+      const schedLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : 71;
+      const defaultNumLaps = isNaN(schedLaps) ? 71 : schedLaps;
+      if (!isRestoringPermalink || appState.calculator.numLaps === null || appState.calculator.numLaps === undefined) {
+        saveToState('calculator.numLaps', defaultNumLaps);
+      }
 
       // Load circuit config if available
       if (circuitName && calculatorConfigData[circuitName]) {
@@ -7957,7 +7974,6 @@
           saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
         }
         renderCalculatorScProbTableFromState();
-        renderCalculatorStrategyInputsFromState();
 
         // Seed patterns only if not loaded from config
         if (!strategiesLoaded) {
@@ -7988,7 +8004,6 @@
           saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
         }
         renderCalculatorScProbTableFromState();
-        renderCalculatorStrategyInputsFromState();
 
         // Seed patterns from free optimization (no config available)
         seedCalculatorPatternsFromFree();
@@ -8003,6 +8018,17 @@
     document.getElementById("calculatorRunBtn").addEventListener("click", runCalculatorSimulation);
 
     // Add event listeners to save calculator inputs to state
+    document.getElementById('calculatorNumLaps').addEventListener('input', function() {
+      const text = this.value.trim();
+      if (text === '') {
+        saveToState('calculator.numLaps', null);
+      } else {
+        const value = parseInt(text, 10);
+        if (!Number.isFinite(value) || value <= 0) return;
+        saveToState('calculator.numLaps', value);
+      }
+      renderCalculatorInputsFromState({ skip: ['calculatorNumLaps'] });
+    });
     document.getElementById('calculatorPitLoss').addEventListener('input', function() {
       const text = this.value.trim();
       if (text === '') {
