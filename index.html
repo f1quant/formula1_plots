@@ -2786,35 +2786,7 @@
       // Apply circuit config once for the new session (before initializing any panels)
       // Only apply config values if appState still has default values (not overridden by URL params)
       const circuitName = currentSessionData.length > 0 ? String(currentSessionData[0].circuit_name || "").trim() : "";
-      if (circuitName && circuitConfig[circuitName]) {
-        const config = circuitConfig[circuitName];
-
-        // Set lap time adjustments and sync to calculator tab
-        // Only apply if current value matches default (hasn't been overridden by URL params)
-        let paceModelChanged = false;
-        if (config["Hard Deg"] !== undefined && appState.paceModel.degHard === defaultAppState.paceModel.degHard) {
-          saveToState('paceModel.degHard', config["Hard Deg"]);
-          paceModelChanged = true;
-        }
-        if (config["Medium Deg"] !== undefined && appState.paceModel.degMedium === defaultAppState.paceModel.degMedium) {
-          saveToState('paceModel.degMedium', config["Medium Deg"]);
-          paceModelChanged = true;
-        }
-        if (config["Soft Deg"] !== undefined && appState.paceModel.degSoft === defaultAppState.paceModel.degSoft) {
-          saveToState('paceModel.degSoft', config["Soft Deg"]);
-          paceModelChanged = true;
-        }
-
-        if (config["Fuel Effect"] !== undefined && appState.paceModel.fuelEffect === defaultAppState.paceModel.fuelEffect) {
-          saveToState('paceModel.fuelEffect', config["Fuel Effect"]);
-          paceModelChanged = true;
-        }
-
-        if (paceModelChanged) {
-          renderPaceModelInputsFromState();
-          onLapTimeAdjustmentChange();
-        }
-      }
+      applyPaceModelDefaultsForCircuit(circuitName);
 
       // Initialize the currently active panel with new data
       if (currentSessionData.length > 0) {
@@ -4094,21 +4066,237 @@ function replaceSelectedDrivers(drivers, options = {}) {
     let lapTimeRound = '';
     let lapTimeSessionType = '';
     let lapTimeDriverOrder = []; // Stores finishing order from unfiltered data
-    let circuitConfig = {};
 
-    // Load circuit config
-    function loadCircuitConfig() {
-      fetch('strat_calc_config.json')
-        .then(response => response.json())
-        .then(data => {
-          circuitConfig = data;
-        })
-        .catch(err => {
-          console.error("Error loading strat_calc_config.json:", err);
-        });
+    const CIRCUIT_CONFIG_FILE = 'strat_calc_config.json';
+    const CircuitConfig = {
+      data: null,
+      promise: null,
+      loading: false,
+      error: null,
+      load() {
+        if (this.data) {
+          return Promise.resolve(this.data);
+        }
+        if (this.promise) {
+          return this.promise;
+        }
+        this.loading = true;
+        const url = resolveCircuitConfigUrl();
+        this.promise = fetch(url)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`Failed to load ${CIRCUIT_CONFIG_FILE}: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+          })
+          .then(data => {
+            this.data = data || {};
+            this.loading = false;
+            this.error = null;
+            this.promise = null;
+            return this.data;
+          })
+          .catch(err => {
+            this.error = err;
+            this.loading = false;
+            this.promise = null;
+            console.error(`Error loading ${CIRCUIT_CONFIG_FILE}:`, err);
+            throw err;
+          });
+        return this.promise;
+      },
+      get(circuitName) {
+        if (!circuitName || !this.data) return null;
+        return this.data[circuitName] || null;
+      }
+    };
+
+    function resolveCircuitConfigUrl() {
+      if (typeof DataCache !== 'undefined' && typeof DataCache.getCSVUrl === 'function') {
+        return DataCache.getCSVUrl(CIRCUIT_CONFIG_FILE);
+      }
+      return CIRCUIT_CONFIG_FILE;
     }
 
-    loadCircuitConfig();
+    function whenCircuitConfigReady(callback) {
+      if (CircuitConfig.data) {
+        callback();
+        return;
+      }
+      CircuitConfig.load()
+        .then(() => callback())
+        .catch(() => callback());
+    }
+
+    // Prime cache early
+    CircuitConfig.load().catch(() => {});
+
+    function applyPaceModelDefaultsForCircuit(circuitName) {
+      if (!circuitName) return;
+
+      const applyConfig = () => {
+        const latestCircuit = currentSessionData && currentSessionData.length > 0
+          ? String(currentSessionData[0].circuit_name || "").trim()
+          : "";
+        if (latestCircuit !== circuitName) return;
+        const config = CircuitConfig.get(circuitName);
+        if (!config) return;
+
+        let paceModelChanged = false;
+        if (config["Hard Deg"] !== undefined && appState.paceModel.degHard === defaultAppState.paceModel.degHard) {
+          saveToState('paceModel.degHard', config["Hard Deg"]);
+          paceModelChanged = true;
+        }
+        if (config["Medium Deg"] !== undefined && appState.paceModel.degMedium === defaultAppState.paceModel.degMedium) {
+          saveToState('paceModel.degMedium', config["Medium Deg"]);
+          paceModelChanged = true;
+        }
+        if (config["Soft Deg"] !== undefined && appState.paceModel.degSoft === defaultAppState.paceModel.degSoft) {
+          saveToState('paceModel.degSoft', config["Soft Deg"]);
+          paceModelChanged = true;
+        }
+        if (config["Fuel Effect"] !== undefined && appState.paceModel.fuelEffect === defaultAppState.paceModel.fuelEffect) {
+          saveToState('paceModel.fuelEffect', config["Fuel Effect"]);
+          paceModelChanged = true;
+        }
+
+        if (paceModelChanged) {
+          renderPaceModelInputsFromState();
+          onLapTimeAdjustmentChange();
+        }
+      };
+
+      if (CircuitConfig.get(circuitName)) {
+        applyConfig();
+      } else {
+        whenCircuitConfigReady(applyConfig);
+      }
+    }
+
+    function configureCalculatorPanelFromCircuit(circuitName, options = {}) {
+      const { isRestoringPermalink = false } = options;
+
+      const applyFallbackDefaults = () => {
+        const setDefaultIfNull = (key, value) => {
+          if (appState.calculator[key] === null || appState.calculator[key] === undefined) {
+            saveToState(`calculator.${key}`, value);
+            return true;
+          }
+          return false;
+        };
+        let calculatorDefaultsChanged = false;
+        calculatorDefaultsChanged = setDefaultIfNull('pitLoss', 21.8) || calculatorDefaultsChanged;
+        calculatorDefaultsChanged = setDefaultIfNull('scLength', 5) || calculatorDefaultsChanged;
+        calculatorDefaultsChanged = setDefaultIfNull('paceS', 75.0) || calculatorDefaultsChanged;
+        calculatorDefaultsChanged = setDefaultIfNull('paceM', 75.5) || calculatorDefaultsChanged;
+        calculatorDefaultsChanged = setDefaultIfNull('paceH', 76.5) || calculatorDefaultsChanged;
+
+        if (calculatorDefaultsChanged) {
+          renderCalculatorInputsFromState();
+        }
+
+        if (!isRestoringPermalink) {
+          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
+        }
+        renderCalculatorScProbTableFromState();
+
+        // Seed patterns from free optimization (no config available)
+        seedCalculatorPatternsFromFree();
+        runCalculatorSimulation();
+      };
+
+      const applyConfigDefaults = config => {
+        if (!config) {
+          applyFallbackDefaults();
+          return;
+        }
+
+        let calculatorInputsChanged = false;
+        if ((appState.calculator.pitLoss === null || appState.calculator.pitLoss === undefined) && config['Pit Loss'] !== undefined) {
+          saveToState('calculator.pitLoss', config['Pit Loss']);
+          calculatorInputsChanged = true;
+        }
+        if ((appState.calculator.scLength === null || appState.calculator.scLength === undefined) && config['SC Length'] !== undefined) {
+          saveToState('calculator.scLength', config['SC Length']);
+          calculatorInputsChanged = true;
+        }
+
+        if ((appState.calculator.paceS === null || appState.calculator.paceS === undefined) && config['Softs']) {
+          saveToState('calculator.paceS', parseFloat(config['Softs']['Pace']));
+          calculatorInputsChanged = true;
+        }
+
+        if ((appState.calculator.paceM === null || appState.calculator.paceM === undefined) && config['Mediums']) {
+          saveToState('calculator.paceM', parseFloat(config['Mediums']['Pace']));
+          calculatorInputsChanged = true;
+        }
+
+        if ((appState.calculator.paceH === null || appState.calculator.paceH === undefined) && config['Hards']) {
+          saveToState('calculator.paceH', parseFloat(config['Hards']['Pace']));
+          calculatorInputsChanged = true;
+        }
+
+        if (calculatorInputsChanged) {
+          renderCalculatorInputsFromState();
+        }
+
+        let strategiesLoaded = false;
+        const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
+        const hasStateStrategies = appState.calculator.strategies &&
+          appState.calculator.strategies.some(s => s && s.trim() !== '');
+
+        if (hasStateStrategies) {
+          renderCalculatorStrategyInputsFromState();
+          strategiesLoaded = true;
+        } else if (config['Strategies Of Interest'] && config['Strategies Of Interest'][0]) {
+          const strategies = Array.from(strategyInputs, () => '');
+          const configStrategies = config['Strategies Of Interest'][0];
+          configStrategies.forEach((strategy, index) => {
+            if (index < strategies.length) {
+              strategies[index] = strategy;
+            }
+          });
+          saveToState('calculator.strategies', strategies);
+          renderCalculatorStrategyInputsFromState();
+          strategiesLoaded = true;
+        } else if (!isRestoringPermalink) {
+          const emptyStrategies = Array.from(strategyInputs, () => '');
+          saveToState('calculator.strategies', emptyStrategies);
+          renderCalculatorStrategyInputsFromState();
+        }
+
+        if (!isRestoringPermalink) {
+          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
+        }
+        renderCalculatorScProbTableFromState();
+
+        // Seed patterns only if not loaded from config
+        if (!strategiesLoaded) {
+          seedCalculatorPatternsFromFree();
+        }
+        runCalculatorSimulation();
+      };
+
+      if (!circuitName) {
+        applyFallbackDefaults();
+        return;
+      }
+
+      const immediateConfig = CircuitConfig.get(circuitName);
+      if (immediateConfig) {
+        applyConfigDefaults(immediateConfig);
+        return;
+      }
+
+      whenCircuitConfigReady(() => {
+        const readyConfig = CircuitConfig.get(circuitName);
+        if (readyConfig) {
+          applyConfigDefaults(readyConfig);
+        } else {
+          applyFallbackDefaults();
+        }
+      });
+    }
 
     function getLapTimeDriverInfo(code) {
       // Get driver info for current session with proper parameters
@@ -7119,22 +7307,6 @@ function replaceSelectedDrivers(drivers, options = {}) {
     const INF = 1e18;
     let calculatorStrategyChart = null;
     let calculatorLapTimeChart = null;
-    let calculatorConfigData = {};
-
-    // Load calculator config
-    function loadCalculatorConfigFile() {
-      fetch(DataCache.getCSVUrl('strat_calc_config.json'))
-        .then(response => response.json())
-        .then(data => {
-          calculatorConfigData = data;
-        })
-        .catch(error => {
-          console.error('Error loading calculator config file:', error);
-        });
-    }
-
-    loadCalculatorConfigFile();
-
     // DP Core: Tyre Rules
     class TwoCompoundTyreRule {
       constructor(compoundIndices) {
@@ -7913,104 +8085,7 @@ function replaceSelectedDrivers(drivers, options = {}) {
         saveToState('calculator.numLaps', defaultNumLaps);
       }
 
-      // Load circuit config if available
-      if (circuitName && calculatorConfigData[circuitName]) {
-        const config = calculatorConfigData[circuitName];
-
-        let calculatorInputsChanged = false;
-        if (appState.calculator.pitLoss === null && config['Pit Loss'] !== undefined) {
-          saveToState('calculator.pitLoss', config['Pit Loss']);
-          calculatorInputsChanged = true;
-        }
-        if (appState.calculator.scLength === null && config['SC Length'] !== undefined) {
-          saveToState('calculator.scLength', config['SC Length']);
-          calculatorInputsChanged = true;
-        }
-
-        if (appState.calculator.paceS === null && config['Softs']) {
-          saveToState('calculator.paceS', parseFloat(config['Softs']['Pace']));
-          calculatorInputsChanged = true;
-        }
-
-        if (appState.calculator.paceM === null && config['Mediums']) {
-          saveToState('calculator.paceM', parseFloat(config['Mediums']['Pace']));
-          calculatorInputsChanged = true;
-        }
-
-        if (appState.calculator.paceH === null && config['Hards']) {
-          saveToState('calculator.paceH', parseFloat(config['Hards']['Pace']));
-          calculatorInputsChanged = true;
-        }
-
-        if (calculatorInputsChanged) {
-          renderCalculatorInputsFromState();
-        }
-
-        // Load strategies of interest if available
-        let strategiesLoaded = false;
-        const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-        const hasStateStrategies = appState.calculator.strategies &&
-          appState.calculator.strategies.some(s => s && s.trim() !== '');
-
-        if (hasStateStrategies) {
-          renderCalculatorStrategyInputsFromState();
-          strategiesLoaded = true;
-        } else if (config['Strategies Of Interest'] && config['Strategies Of Interest'][0]) {
-          const strategies = Array.from(strategyInputs, () => '');
-          const configStrategies = config['Strategies Of Interest'][0];
-          configStrategies.forEach((strategy, index) => {
-            if (index < strategies.length) {
-              strategies[index] = strategy;
-            }
-          });
-          saveToState('calculator.strategies', strategies);
-          renderCalculatorStrategyInputsFromState();
-          strategiesLoaded = true;
-        } else if (!isRestoringPermalink) {
-          const emptyStrategies = Array.from(strategyInputs, () => '');
-          saveToState('calculator.strategies', emptyStrategies);
-          renderCalculatorStrategyInputsFromState();
-        }
-
-        if (!isRestoringPermalink) {
-          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
-        }
-        renderCalculatorScProbTableFromState();
-
-        // Seed patterns only if not loaded from config
-        if (!strategiesLoaded) {
-          seedCalculatorPatternsFromFree();
-        }
-        runCalculatorSimulation();
-      } else {
-        // Default values (degradation and fuel effect come from shared paceModel)
-        const setDefaultIfNull = (key, value) => {
-          if (appState.calculator[key] === null || appState.calculator[key] === undefined) {
-            saveToState(`calculator.${key}`, value);
-            return true;
-          }
-          return false;
-        };
-        let calculatorDefaultsChanged = false;
-        calculatorDefaultsChanged = setDefaultIfNull('pitLoss', 21.8) || calculatorDefaultsChanged;
-        calculatorDefaultsChanged = setDefaultIfNull('scLength', 5) || calculatorDefaultsChanged;
-        calculatorDefaultsChanged = setDefaultIfNull('paceS', 75.0) || calculatorDefaultsChanged;
-        calculatorDefaultsChanged = setDefaultIfNull('paceM', 75.5) || calculatorDefaultsChanged;
-        calculatorDefaultsChanged = setDefaultIfNull('paceH', 76.5) || calculatorDefaultsChanged;
-
-        if (calculatorDefaultsChanged) {
-          renderCalculatorInputsFromState();
-        }
-
-        if (!isRestoringPermalink) {
-          saveToState('calculator.scProbRanges', cloneDefaultScProbRanges());
-        }
-        renderCalculatorScProbTableFromState();
-
-        // Seed patterns from free optimization (no config available)
-        seedCalculatorPatternsFromFree();
-        runCalculatorSimulation();
-      }
+      configureCalculatorPanelFromCircuit(circuitName, { isRestoringPermalink });
     }
 
     // Set up calculator event listeners
