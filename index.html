@@ -1310,107 +1310,117 @@
 
     <!-- Lap Time Panel -->
     <div id="lap-time-panel" class="content-panel">
-      <div class="lap-time-layout">
-        <div class="lap-time-sidebar">
-          <div id="lapTimeDriversList"></div>
-        </div>
-        <div class="lap-time-chart-wrapper">
-          <div class="lap-time-controls">
-            <div class="lap-time-controls-left">
-              <button id="fuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
-              <button id="tyreLifeAdjustToggle" class="toggle-button active">Tyre Life Adjusted</button>
+      <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+        <!-- LEFT: Filters -->
+        <div style="flex: 0 0 400px;">
+          <!-- Lap Filters -->
+          <div class="filter-panel" style="margin-bottom: 16px;">
+            <div class="filters-title">Lap Filters</div>
+            <div class="filters-grid" style="grid-template-columns: 1fr;">
+              <div class="filter-item">
+                <div class="filter-label">Laps to Discard at Start of Race</div>
+                <input type="number" id="filterMinLap" value="1" min="0">
+              </div>
+              <div class="filter-item">
+                <div class="filter-label">Laps to Discard at End of Race</div>
+                <input type="number" id="filterEndLaps" value="1" min="0">
+              </div>
+              <div class="filter-item">
+                <div class="filter-label">Laps to Discard at Start of Stint</div>
+                <input type="number" id="filterMinStintLap" value="0" min="0">
+              </div>
+              <div class="filter-item">
+                <div class="filter-label">Min Distance to Car Ahead</div>
+                <input type="number" id="filterMinDist" value="3" min="0" step="0.1">
+              </div>
             </div>
-            <button id="copyLapTimeDataBtn" class="copy-data-button">Copy Data</button>
           </div>
-          <div id="lapTimeChart"></div>
+
+          <!-- Include Filters -->
+          <div class="filter-panel" style="margin-bottom: 16px;">
+            <div class="filters-title">Include</div>
+            <div class="exclude-checkboxes">
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterIncludeLapped" checked>
+                <label for="filterIncludeLapped">Lapped</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterIncludeRetired" checked>
+                <label for="filterIncludeRetired">Retired</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterRainfall">
+                <label for="filterRainfall">Rainfall</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterSafetyCar">
+                <label for="filterSafetyCar">Safety Car</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterPitLaps">
+                <label for="filterPitLaps">Pit Laps</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Analysis Parameters -->
+          <div class="filter-panel">
+            <div class="filters-title">Analysis Parameters</div>
+            <div class="filters-grid" style="grid-template-columns: 1fr;">
+              <div class="filter-item vertical">
+                <div class="filter-label">Fuel Effect (sec/lap)</div>
+                <div class="slider-container">
+                  <input type="range" id="fuelEffect" min="0" max="0.3" step="0.001" value="0.025">
+                  <div class="slider-value" id="fuelEffectValue">0.025</div>
+                </div>
+              </div>
+              <div class="filter-item vertical">
+                <div class="filter-label">Soft Deg (sec/lap)</div>
+                <div class="slider-container">
+                  <input type="range" id="degSoft" min="0" max="0.3" step="0.001" value="0.12">
+                  <div class="slider-value" id="degSoftValue">0.120</div>
+                </div>
+              </div>
+              <div class="filter-item vertical">
+                <div class="filter-label">Medium Deg (sec/lap)</div>
+                <div class="slider-container">
+                  <input type="range" id="degMedium" min="0" max="0.3" step="0.001" value="0.08">
+                  <div class="slider-value" id="degMediumValue">0.080</div>
+                </div>
+              </div>
+              <div class="filter-item vertical">
+                <div class="filter-label">Hard Deg (sec/lap)</div>
+                <div class="slider-container">
+                  <input type="range" id="degHard" min="0" max="0.3" step="0.001" value="0.05">
+                  <div class="slider-value" id="degHardValue">0.050</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Drivers and Chart -->
+        <div style="flex: 1;">
+          <div class="lap-time-layout">
+            <div class="lap-time-sidebar">
+              <div id="lapTimeDriversList"></div>
+            </div>
+            <div class="lap-time-chart-wrapper">
+              <div class="lap-time-controls">
+                <div class="lap-time-controls-left">
+                  <button id="fuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
+                  <button id="tyreLifeAdjustToggle" class="toggle-button active">Tyre Life Adjusted</button>
+                </div>
+                <button id="copyLapTimeDataBtn" class="copy-data-button">Copy Data</button>
+              </div>
+              <div id="lapTimeChart"></div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="lap-time-filters">
-        <div class="filter-panel">
-          <div class="filters-title">Adjustments</div>
-          <div class="filters-grid">
-            <div class="filter-item vertical">
-              <div class="filter-label">Hard Deg (sec/lap)</div>
-              <div class="slider-container">
-                <input type="range" id="degHard" min="0" max="0.3" step="0.001" value="0.05">
-                <div class="slider-value" id="degHardValue">0.050</div>
-              </div>
-            </div>
-            <div class="filter-item vertical">
-              <div class="filter-label">Medium Deg (sec/lap)</div>
-              <div class="slider-container">
-                <input type="range" id="degMedium" min="0" max="0.3" step="0.001" value="0.08">
-                <div class="slider-value" id="degMediumValue">0.080</div>
-              </div>
-            </div>
-            <div class="filter-item vertical">
-              <div class="filter-label">Soft Deg (sec/lap)</div>
-              <div class="slider-container">
-                <input type="range" id="degSoft" min="0" max="0.3" step="0.001" value="0.12">
-                <div class="slider-value" id="degSoftValue">0.120</div>
-              </div>
-            </div>
-            <div class="filter-item vertical">
-              <div class="filter-label">Fuel Effect (sec/lap)</div>
-              <div class="slider-container">
-                <input type="range" id="fuelEffect" min="0" max="0.3" step="0.001" value="0.025">
-                <div class="slider-value" id="fuelEffectValue">0.025</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="filter-panel">
-          <div class="filters-title">Lap Filters</div>
-          <div class="filters-grid">
-            <div class="filter-item">
-              <div class="filter-label">Laps to Discard at Start of Race</div>
-              <input type="number" id="filterMinLap" value="1" min="0">
-            </div>
-            <div class="filter-item">
-              <div class="filter-label">Laps to Discard at End of Race</div>
-              <input type="number" id="filterEndLaps" value="1" min="0">
-            </div>
-            <div class="filter-item">
-              <div class="filter-label">Laps to Discard at Start of Stint</div>
-              <input type="number" id="filterMinStintLap" value="0" min="0">
-            </div>
-            <div class="filter-item">
-              <div class="filter-label">Min Distance to Car Ahead</div>
-              <input type="number" id="filterMinDist" value="3" min="0" step="0.1">
-            </div>
-          </div>
-        </div>
-
-        <div class="filter-panel">
-          <div class="filters-title">Include</div>
-          <div class="exclude-checkboxes">
-            <div class="checkbox-group">
-              <input type="checkbox" id="filterIncludeLapped" checked>
-              <label for="filterIncludeLapped">Lapped</label>
-            </div>
-            <div class="checkbox-group">
-              <input type="checkbox" id="filterIncludeRetired" checked>
-              <label for="filterIncludeRetired">Retired</label>
-            </div>
-            <div class="checkbox-group">
-              <input type="checkbox" id="filterRainfall">
-              <label for="filterRainfall">Rainfall</label>
-            </div>
-            <div class="checkbox-group">
-              <input type="checkbox" id="filterSafetyCar">
-              <label for="filterSafetyCar">Safety Car</label>
-            </div>
-            <div class="checkbox-group">
-              <input type="checkbox" id="filterPitLaps">
-              <label for="filterPitLaps">Pit Laps</label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div id="lapTimeSummaryTableContainer" style="margin-top: 16px;"></div>
+      <!-- BOTTOM: Summary Table -->
+      <div id="lapTimeSummaryTableContainer"></div>
     </div>
 
     <!-- Tyre Degradation Panel -->
