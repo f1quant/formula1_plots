@@ -1727,6 +1727,82 @@
     // ============================================================================
 
     /**
+     * Default state object defining all initial/default values.
+     * Used as a baseline for generating minimal permalink payloads.
+     */
+    const defaultAppState = {
+      // Shared across tabs
+      currentActiveTab: 'strategy',
+      selectedDrivers: [],
+
+      // Session selection
+      session: {
+        season: '',
+        gp: '',
+        sessionType: ''
+      },
+
+      // Shared filters (synced across lap time, tyre deg, and fuel effect tabs)
+      filters: {
+        minLap: 1,
+        endLaps: 1,
+        minStintLap: 0,
+        minDist: 3,
+        rainfall: false,
+        safetyCar: false,
+        pitLaps: false,
+        includeLapped: true,
+        includeRetired: true
+      },
+
+      // Shared pace model parameters (used across lap time and calculator tabs)
+      paceModel: {
+        fuelEffect: 0.025,
+        degSoft: 0.12,
+        degMedium: 0.08,
+        degHard: 0.05
+      },
+
+      // Race Trace tab
+      raceTrace: {
+        lapMin: 1,
+        lapMax: 1
+      },
+
+      // Lap Time tab
+      lapTime: {
+        fuelAdjust: true,
+        tyreLifeAdjust: true
+      },
+
+      // Tyre Deg tab
+      tyreDeg: {
+        fuelAdjust: true,
+        fuelEffectSlider: 0.025,
+        filterMinRows: 5,
+        filterMinCorr: -1.0,
+        selectedStints: []
+      },
+
+      // Fuel Effect tab
+      fuelEffect: {
+        fuelEffectInput: 0.025,
+        selectedRows: []
+      },
+
+      // Calculator tab
+      calculator: {
+        strategies: ['', '', '', '', ''],
+        pitLoss: null,
+        scLength: null,
+        paceS: null,
+        paceM: null,
+        paceH: null,
+        scProbRanges: []
+      }
+    };
+
+    /**
      * Global state object storing all user inputs across all tabs.
      * This allows for future serialization and state persistence.
      */
@@ -1734,6 +1810,13 @@
       // Shared across tabs
       currentActiveTab: 'strategy',
       selectedDrivers: new Set(), // Shared driver selection across race trace and lap time panels
+
+      // Session selection
+      session: {
+        season: '',
+        gp: '',
+        sessionType: ''
+      },
 
       // Shared filters (synced across lap time, tyre deg, and fuel effect tabs)
       filters: {
@@ -1807,6 +1890,9 @@
         obj = obj[keys[i]];
       }
       obj[keys[keys.length - 1]] = value;
+
+      // Update URL with debouncing
+      updateURLFromState();
     }
 
     /**
@@ -1824,113 +1910,488 @@
       return obj;
     }
 
+    // ============================================================================
+    // PERMALINK UTILITIES
+    // ============================================================================
+
     /**
-     * Restore state to UI elements
-     * Validates data-dependent selections against available data
+     * Deep equality check for two values
+     */
+    function deepEqual(a, b) {
+      if (a === b) return true;
+      if (a == null || b == null) return false;
+      if (typeof a !== typeof b) return false;
+
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+          if (!deepEqual(a[i], b[i])) return false;
+        }
+        return true;
+      }
+
+      if (typeof a === 'object') {
+        const keysA = Object.keys(a);
+        const keysB = Object.keys(b);
+        if (keysA.length !== keysB.length) return false;
+        for (const key of keysA) {
+          if (!keysB.includes(key)) return false;
+          if (!deepEqual(a[key], b[key])) return false;
+        }
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
+     * Deep merge source object into target object
+     */
+    function deepMerge(target, source) {
+      const result = { ...target };
+
+      for (const key in source) {
+        if (source.hasOwnProperty(key)) {
+          if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+            result[key] = deepMerge(result[key] || {}, source[key]);
+          } else {
+            result[key] = source[key];
+          }
+        }
+      }
+
+      return result;
+    }
+
+    /**
+     * Build minimal permalink payload by extracting only differences from defaults
+     */
+    function buildPermalinkPayload() {
+      // Build overrides object with only differences from defaults
+      const overrides = {};
+
+      // Helper to add property if different from default
+      function addIfDifferent(path, value, defaultValue) {
+        if (!deepEqual(value, defaultValue)) {
+          const keys = path.split('.');
+          let obj = overrides;
+          for (let i = 0; i < keys.length - 1; i++) {
+            if (!obj[keys[i]]) obj[keys[i]] = {};
+            obj = obj[keys[i]];
+          }
+          obj[keys[keys.length - 1]] = value;
+        }
+      }
+
+      // Compare each top-level property
+      if (appState.currentActiveTab !== defaultAppState.currentActiveTab) {
+        overrides.currentActiveTab = appState.currentActiveTab;
+      }
+
+      // Convert selectedDrivers Set to array for comparison
+      const selectedDriversArray = Array.from(appState.selectedDrivers);
+      if (!deepEqual(selectedDriversArray, defaultAppState.selectedDrivers)) {
+        overrides.selectedDrivers = selectedDriversArray;
+      }
+
+      // Session
+      const sessionOverrides = {};
+      for (const key in appState.session) {
+        if (!deepEqual(appState.session[key], defaultAppState.session[key])) {
+          sessionOverrides[key] = appState.session[key];
+        }
+      }
+      if (Object.keys(sessionOverrides).length > 0) {
+        overrides.session = sessionOverrides;
+      }
+
+      // Filters
+      const filtersOverrides = {};
+      for (const key in appState.filters) {
+        if (!deepEqual(appState.filters[key], defaultAppState.filters[key])) {
+          filtersOverrides[key] = appState.filters[key];
+        }
+      }
+      if (Object.keys(filtersOverrides).length > 0) {
+        overrides.filters = filtersOverrides;
+      }
+
+      // Pace model
+      const paceModelOverrides = {};
+      for (const key in appState.paceModel) {
+        if (!deepEqual(appState.paceModel[key], defaultAppState.paceModel[key])) {
+          paceModelOverrides[key] = appState.paceModel[key];
+        }
+      }
+      if (Object.keys(paceModelOverrides).length > 0) {
+        overrides.paceModel = paceModelOverrides;
+      }
+
+      // Race trace
+      const raceTraceOverrides = {};
+      for (const key in appState.raceTrace) {
+        if (!deepEqual(appState.raceTrace[key], defaultAppState.raceTrace[key])) {
+          raceTraceOverrides[key] = appState.raceTrace[key];
+        }
+      }
+      if (Object.keys(raceTraceOverrides).length > 0) {
+        overrides.raceTrace = raceTraceOverrides;
+      }
+
+      // Lap time
+      const lapTimeOverrides = {};
+      for (const key in appState.lapTime) {
+        if (!deepEqual(appState.lapTime[key], defaultAppState.lapTime[key])) {
+          lapTimeOverrides[key] = appState.lapTime[key];
+        }
+      }
+      if (Object.keys(lapTimeOverrides).length > 0) {
+        overrides.lapTime = lapTimeOverrides;
+      }
+
+      // Tyre deg
+      const tyreDegOverrides = {};
+      for (const key in appState.tyreDeg) {
+        if (key === 'selectedStints') {
+          const stintsArray = Array.from(appState.tyreDeg.selectedStints);
+          if (!deepEqual(stintsArray, defaultAppState.tyreDeg.selectedStints)) {
+            tyreDegOverrides.selectedStints = stintsArray;
+          }
+        } else {
+          if (!deepEqual(appState.tyreDeg[key], defaultAppState.tyreDeg[key])) {
+            tyreDegOverrides[key] = appState.tyreDeg[key];
+          }
+        }
+      }
+      if (Object.keys(tyreDegOverrides).length > 0) {
+        overrides.tyreDeg = tyreDegOverrides;
+      }
+
+      // Fuel effect
+      const fuelEffectOverrides = {};
+      for (const key in appState.fuelEffect) {
+        if (key === 'selectedRows') {
+          const rowsArray = Array.from(appState.fuelEffect.selectedRows);
+          if (!deepEqual(rowsArray, defaultAppState.fuelEffect.selectedRows)) {
+            fuelEffectOverrides.selectedRows = rowsArray;
+          }
+        } else {
+          if (!deepEqual(appState.fuelEffect[key], defaultAppState.fuelEffect[key])) {
+            fuelEffectOverrides[key] = appState.fuelEffect[key];
+          }
+        }
+      }
+      if (Object.keys(fuelEffectOverrides).length > 0) {
+        overrides.fuelEffect = fuelEffectOverrides;
+      }
+
+      // Calculator
+      const calculatorOverrides = {};
+      for (const key in appState.calculator) {
+        if (!deepEqual(appState.calculator[key], defaultAppState.calculator[key])) {
+          calculatorOverrides[key] = appState.calculator[key];
+        }
+      }
+      if (Object.keys(calculatorOverrides).length > 0) {
+        overrides.calculator = calculatorOverrides;
+      }
+
+      return {
+        v: 1,
+        session: {
+          season: appState.session.season,
+          gp: appState.session.gp,
+          session: appState.session.sessionType
+        },
+        tab: appState.currentActiveTab,
+        overrides
+      };
+    }
+
+    /**
+     * Encode permalink state to URL-safe base64
+     */
+    function encodePermalinkState(payload) {
+      try {
+        const json = JSON.stringify(payload);
+        const base64 = btoa(json);
+        // Make URL-safe: + -> -, / -> _, remove = padding
+        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      } catch (e) {
+        console.error('Failed to encode permalink state:', e);
+        return null;
+      }
+    }
+
+    /**
+     * Decode permalink state from URL-safe base64
+     */
+    function decodePermalinkState(encoded) {
+      try {
+        // Restore standard base64: - -> +, _ -> /
+        let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        while (base64.length % 4) {
+          base64 += '=';
+        }
+        const json = atob(base64);
+        const payload = JSON.parse(json);
+
+        // Validate version
+        if (payload.v !== 1) {
+          console.warn('Unsupported permalink version:', payload.v);
+          return null;
+        }
+
+        return payload;
+      } catch (e) {
+        console.error('Failed to decode permalink state:', e);
+        return null;
+      }
+    }
+
+    /**
+     * Debounced URL update
+     */
+    let urlUpdateTimeout = null;
+    function updateURLFromState() {
+      clearTimeout(urlUpdateTimeout);
+      urlUpdateTimeout = setTimeout(() => {
+        const payload = buildPermalinkPayload();
+        const encoded = encodePermalinkState(payload);
+
+        if (encoded) {
+          const params = new URLSearchParams();
+          params.set('season', payload.session.season);
+          params.set('gp', payload.session.gp);
+          params.set('session', payload.session.session);
+          params.set('tab', payload.tab);
+          params.set('s', encoded);
+
+          const newURL = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({}, '', newURL);
+        }
+      }, 300); // 300ms debounce
+    }
+
+    /**
+     * Load state from URL on page load
+     */
+    function loadStateFromURL() {
+      const params = new URLSearchParams(window.location.search);
+
+      // Get simple params
+      const season = params.get('season');
+      const gp = params.get('gp');
+      const session = params.get('session');
+      const tab = params.get('tab');
+      const encoded = params.get('s');
+
+      // If we have encoded state, decode and apply it
+      if (encoded) {
+        const payload = decodePermalinkState(encoded);
+        if (payload && payload.overrides) {
+          // Merge overrides into appState (but keep Sets for now, we'll convert arrays to sets later)
+          const merged = deepMerge(defaultAppState, payload.overrides);
+
+          // Apply merged values to appState, converting arrays to sets where appropriate
+          Object.assign(appState.session, merged.session || {});
+          Object.assign(appState.filters, merged.filters || {});
+          Object.assign(appState.paceModel, merged.paceModel || {});
+          Object.assign(appState.raceTrace, merged.raceTrace || {});
+          Object.assign(appState.lapTime, merged.lapTime || {});
+          Object.assign(appState.calculator, merged.calculator || {});
+
+          // Handle tyre deg
+          if (merged.tyreDeg) {
+            Object.assign(appState.tyreDeg, merged.tyreDeg);
+            if (Array.isArray(merged.tyreDeg.selectedStints)) {
+              appState.tyreDeg.selectedStints = new Set(merged.tyreDeg.selectedStints);
+            }
+          }
+
+          // Handle fuel effect
+          if (merged.fuelEffect) {
+            Object.assign(appState.fuelEffect, merged.fuelEffect);
+            if (Array.isArray(merged.fuelEffect.selectedRows)) {
+              appState.fuelEffect.selectedRows = new Set(merged.fuelEffect.selectedRows);
+            }
+          }
+
+          // Handle selected drivers
+          if (Array.isArray(merged.selectedDrivers)) {
+            appState.selectedDrivers = new Set(merged.selectedDrivers);
+          }
+
+          // Handle tab
+          if (merged.currentActiveTab) {
+            appState.currentActiveTab = merged.currentActiveTab;
+          }
+        }
+      }
+
+      // Override with simple params if provided (for backwards compatibility and flexibility)
+      if (season) appState.session.season = season;
+      if (gp) appState.session.gp = gp;
+      if (session) appState.session.sessionType = session;
+      if (tab) appState.currentActiveTab = tab;
+    }
+    
+    /**
+     * Restore state to UI elements from appState
+     * Called after loading state from URL or storage
      */
     function restoreStateToUI() {
-      // Shared filters (lap time, tyre deg, fuel effect all use same filter element IDs)
-      document.getElementById('filterMinLap').value = appState.filters.minLap;
-      document.getElementById('filterEndLaps').value = appState.filters.endLaps;
-      document.getElementById('filterMinStintLap').value = appState.filters.minStintLap;
-      document.getElementById('filterMinDist').value = appState.filters.minDist;
-      document.getElementById('filterRainfall').checked = appState.filters.rainfall;
-      document.getElementById('filterSafetyCar').checked = appState.filters.safetyCar;
-      document.getElementById('filterPitLaps').checked = appState.filters.pitLaps;
-      document.getElementById('filterIncludeLapped').checked = appState.filters.includeLapped;
-      document.getElementById('filterIncludeRetired').checked = appState.filters.includeRetired;
+      // Shared filters
+      const filterMinLap = document.getElementById('filterMinLap');
+      const filterEndLaps = document.getElementById('filterEndLaps');
+      const filterMinStintLap = document.getElementById('filterMinStintLap');
+      const filterMinDist = document.getElementById('filterMinDist');
 
-      // Tyre deg filters
-      document.getElementById('tyreDegFilterMinLap').value = appState.filters.minLap;
-      document.getElementById('tyreDegFilterEndLaps').value = appState.filters.endLaps;
-      document.getElementById('tyreDegFilterMinStintLap').value = appState.filters.minStintLap;
-      document.getElementById('tyreDegFilterMinDist').value = appState.filters.minDist;
-      document.getElementById('tyreDegFilterRainfall').checked = appState.filters.rainfall;
-      document.getElementById('tyreDegFilterSafetyCar').checked = appState.filters.safetyCar;
-      document.getElementById('tyreDegFilterPitLaps').checked = appState.filters.pitLaps;
-      document.getElementById('tyreDegFilterIncludeLapped').checked = appState.filters.includeLapped;
-      document.getElementById('tyreDegFilterIncludeRetired').checked = appState.filters.includeRetired;
+      if (filterMinLap) filterMinLap.value = appState.filters.minLap;
+      if (filterEndLaps) filterEndLaps.value = appState.filters.endLaps;
+      if (filterMinStintLap) filterMinStintLap.value = appState.filters.minStintLap;
+      if (filterMinDist) filterMinDist.value = appState.filters.minDist;
 
-      // Fuel effect filters
-      document.getElementById('fuelEffectFilterMinLap').value = appState.filters.minLap;
-      document.getElementById('fuelEffectFilterEndLaps').value = appState.filters.endLaps;
-      document.getElementById('fuelEffectFilterMinStintLap').value = appState.filters.minStintLap;
-      document.getElementById('fuelEffectFilterMinDist').value = appState.filters.minDist;
-      document.getElementById('fuelEffectFilterRainfall').checked = appState.filters.rainfall;
-      document.getElementById('fuelEffectFilterSafetyCar').checked = appState.filters.safetyCar;
-      document.getElementById('fuelEffectFilterPitLaps').checked = appState.filters.pitLaps;
-      document.getElementById('fuelEffectFilterIncludeLapped').checked = appState.filters.includeLapped;
-      document.getElementById('fuelEffectFilterIncludeRetired').checked = appState.filters.includeRetired;
+      // Checkboxes
+      const filterRainfall = document.getElementById('filterRainfall');
+      const filterSafetyCar = document.getElementById('filterSafetyCar');
+      const filterPitLaps = document.getElementById('filterPitLaps');
+      const filterIncludeLapped = document.getElementById('filterIncludeLapped');
+      const filterIncludeRetired = document.getElementById('filterIncludeRetired');
 
-      // Lap Time tab
-      document.getElementById('degHard').value = appState.paceModel.degHard;
-      document.getElementById('degHardValue').textContent = appState.paceModel.degHard.toFixed(3);
-      document.getElementById('degMedium').value = appState.paceModel.degMedium;
-      document.getElementById('degMediumValue').textContent = appState.paceModel.degMedium.toFixed(3);
-      document.getElementById('degSoft').value = appState.paceModel.degSoft;
-      document.getElementById('degSoftValue').textContent = appState.paceModel.degSoft.toFixed(3);
-      document.getElementById('fuelEffect').value = appState.paceModel.fuelEffect;
-      document.getElementById('fuelEffectValue').textContent = appState.paceModel.fuelEffect.toFixed(3);
+      if (filterRainfall) filterRainfall.checked = appState.filters.rainfall;
+      if (filterSafetyCar) filterSafetyCar.checked = appState.filters.safetyCar;
+      if (filterPitLaps) filterPitLaps.checked = appState.filters.pitLaps;
+      if (filterIncludeLapped) filterIncludeLapped.checked = appState.filters.includeLapped;
+      if (filterIncludeRetired) filterIncludeRetired.checked = appState.filters.includeRetired;
 
+      // Tyre deg tab filters (synced copies)
+      const tyreDegFilterMinLap = document.getElementById('tyreDegFilterMinLap');
+      const tyreDegFilterEndLaps = document.getElementById('tyreDegFilterEndLaps');
+      const tyreDegFilterMinStintLap = document.getElementById('tyreDegFilterMinStintLap');
+      const tyreDegFilterMinDist = document.getElementById('tyreDegFilterMinDist');
+      const tyreDegFilterRainfall = document.getElementById('tyreDegFilterRainfall');
+      const tyreDegFilterSafetyCar = document.getElementById('tyreDegFilterSafetyCar');
+      const tyreDegFilterPitLaps = document.getElementById('tyreDegFilterPitLaps');
+      const tyreDegFilterIncludeLapped = document.getElementById('tyreDegFilterIncludeLapped');
+      const tyreDegFilterIncludeRetired = document.getElementById('tyreDegFilterIncludeRetired');
+
+      if (tyreDegFilterMinLap) tyreDegFilterMinLap.value = appState.filters.minLap;
+      if (tyreDegFilterEndLaps) tyreDegFilterEndLaps.value = appState.filters.endLaps;
+      if (tyreDegFilterMinStintLap) tyreDegFilterMinStintLap.value = appState.filters.minStintLap;
+      if (tyreDegFilterMinDist) tyreDegFilterMinDist.value = appState.filters.minDist;
+      if (tyreDegFilterRainfall) tyreDegFilterRainfall.checked = appState.filters.rainfall;
+      if (tyreDegFilterSafetyCar) tyreDegFilterSafetyCar.checked = appState.filters.safetyCar;
+      if (tyreDegFilterPitLaps) tyreDegFilterPitLaps.checked = appState.filters.pitLaps;
+      if (tyreDegFilterIncludeLapped) tyreDegFilterIncludeLapped.checked = appState.filters.includeLapped;
+      if (tyreDegFilterIncludeRetired) tyreDegFilterIncludeRetired.checked = appState.filters.includeRetired;
+
+      // Fuel effect tab filters (synced copies)
+      const fuelEffectFilterMinLap = document.getElementById('fuelEffectFilterMinLap');
+      const fuelEffectFilterEndLaps = document.getElementById('fuelEffectFilterEndLaps');
+      const fuelEffectFilterMinStintLap = document.getElementById('fuelEffectFilterMinStintLap');
+      const fuelEffectFilterMinDist = document.getElementById('fuelEffectFilterMinDist');
+      const fuelEffectFilterRainfall = document.getElementById('fuelEffectFilterRainfall');
+      const fuelEffectFilterSafetyCar = document.getElementById('fuelEffectFilterSafetyCar');
+      const fuelEffectFilterPitLaps = document.getElementById('fuelEffectFilterPitLaps');
+      const fuelEffectFilterIncludeLapped = document.getElementById('fuelEffectFilterIncludeLapped');
+      const fuelEffectFilterIncludeRetired = document.getElementById('fuelEffectFilterIncludeRetired');
+
+      if (fuelEffectFilterMinLap) fuelEffectFilterMinLap.value = appState.filters.minLap;
+      if (fuelEffectFilterEndLaps) fuelEffectFilterEndLaps.value = appState.filters.endLaps;
+      if (fuelEffectFilterMinStintLap) fuelEffectFilterMinStintLap.value = appState.filters.minStintLap;
+      if (fuelEffectFilterMinDist) fuelEffectFilterMinDist.value = appState.filters.minDist;
+      if (fuelEffectFilterRainfall) fuelEffectFilterRainfall.checked = appState.filters.rainfall;
+      if (fuelEffectFilterSafetyCar) fuelEffectFilterSafetyCar.checked = appState.filters.safetyCar;
+      if (fuelEffectFilterPitLaps) fuelEffectFilterPitLaps.checked = appState.filters.pitLaps;
+      if (fuelEffectFilterIncludeLapped) fuelEffectFilterIncludeLapped.checked = appState.filters.includeLapped;
+      if (fuelEffectFilterIncludeRetired) fuelEffectFilterIncludeRetired.checked = appState.filters.includeRetired;
+
+      // Pace model / Lap time sliders
+      const degHard = document.getElementById('degHard');
+      const degHardValue = document.getElementById('degHardValue');
+      const degMedium = document.getElementById('degMedium');
+      const degMediumValue = document.getElementById('degMediumValue');
+      const degSoft = document.getElementById('degSoft');
+      const degSoftValue = document.getElementById('degSoftValue');
+      const fuelEffect = document.getElementById('fuelEffect');
+      const fuelEffectValue = document.getElementById('fuelEffectValue');
+
+      if (degHard) {
+        degHard.value = appState.paceModel.degHard;
+        if (degHardValue) degHardValue.textContent = appState.paceModel.degHard.toFixed(3);
+      }
+      if (degMedium) {
+        degMedium.value = appState.paceModel.degMedium;
+        if (degMediumValue) degMediumValue.textContent = appState.paceModel.degMedium.toFixed(3);
+      }
+      if (degSoft) {
+        degSoft.value = appState.paceModel.degSoft;
+        if (degSoftValue) degSoftValue.textContent = appState.paceModel.degSoft.toFixed(3);
+      }
+      if (fuelEffect) {
+        fuelEffect.value = appState.paceModel.fuelEffect;
+        if (fuelEffectValue) fuelEffectValue.textContent = appState.paceModel.fuelEffect.toFixed(3);
+      }
+
+      // Lap time tab toggle buttons
       const fuelAdjustToggle = document.getElementById('fuelAdjustToggle');
-      if (appState.lapTime.fuelAdjust) {
-        fuelAdjustToggle.classList.add('active');
-      } else {
-        fuelAdjustToggle.classList.remove('active');
-      }
-
       const tyreLifeAdjustToggle = document.getElementById('tyreLifeAdjustToggle');
-      if (appState.lapTime.tyreLifeAdjust) {
-        tyreLifeAdjustToggle.classList.add('active');
-      } else {
-        tyreLifeAdjustToggle.classList.remove('active');
-      }
+      if (fuelAdjustToggle) fuelAdjustToggle.classList.toggle('active', appState.lapTime.fuelAdjust);
+      if (tyreLifeAdjustToggle) tyreLifeAdjustToggle.classList.toggle('active', appState.lapTime.tyreLifeAdjust);
 
-      // Tyre Deg tab
-      document.getElementById('tyreDegFilterMinRows').value = appState.tyreDeg.filterMinRows;
-      document.getElementById('tyreDegFilterMinCorr').value = appState.tyreDeg.filterMinCorr;
-      document.getElementById('tyreDegFuelEffectSlider').value = appState.tyreDeg.fuelEffectSlider;
+      // Race trace tab
+      const raceTraceLapMin = document.getElementById('raceTraceLapMin');
+      const raceTraceLapMax = document.getElementById('raceTraceLapMax');
+      if (raceTraceLapMin) raceTraceLapMin.value = appState.raceTrace.lapMin;
+      if (raceTraceLapMax) raceTraceLapMax.value = appState.raceTrace.lapMax;
 
+      // Tyre deg tab
       const tyreDegFuelAdjustToggle = document.getElementById('tyreDegFuelAdjustToggle');
-      if (appState.tyreDeg.fuelAdjust) {
-        tyreDegFuelAdjustToggle.classList.add('active');
-      } else {
-        tyreDegFuelAdjustToggle.classList.remove('active');
-      }
+      const tyreDegFuelEffectSlider = document.getElementById('tyreDegFuelEffectSlider');
+      const tyreDegFuelEffectValue = document.getElementById('tyreDegFuelEffectValue');
+      const tyreDegFilterMinRows = document.getElementById('tyreDegFilterMinRows');
+      const tyreDegFilterMinCorr = document.getElementById('tyreDegFilterMinCorr');
 
-      // Fuel Effect tab
+      if (tyreDegFuelAdjustToggle) tyreDegFuelAdjustToggle.classList.toggle('active', appState.tyreDeg.fuelAdjust);
+      if (tyreDegFuelEffectSlider) {
+        tyreDegFuelEffectSlider.value = appState.tyreDeg.fuelEffectSlider;
+        if (tyreDegFuelEffectValue) tyreDegFuelEffectValue.textContent = appState.tyreDeg.fuelEffectSlider.toFixed(3);
+      }
+      if (tyreDegFilterMinRows) tyreDegFilterMinRows.value = appState.tyreDeg.filterMinRows;
+      if (tyreDegFilterMinCorr) tyreDegFilterMinCorr.value = appState.tyreDeg.filterMinCorr;
+
+      // Fuel effect tab
       const fuelEffectInput = document.getElementById('fuelEffectInput');
-      if (fuelEffectInput && appState.fuelEffect.fuelEffectInput !== null) {
-        fuelEffectInput.value = appState.fuelEffect.fuelEffectInput;
-      }
+      if (fuelEffectInput) fuelEffectInput.value = appState.fuelEffect.fuelEffectInput;
 
-      // Calculator tab - restore all inputs
+      // Calculator tab
       const calculatorPitLoss = document.getElementById('calculatorPitLoss');
       const calculatorScLength = document.getElementById('calculatorScLength');
       const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
+      const calculatorPaceS = document.getElementById('calculatorPaceS');
+      const calculatorPaceM = document.getElementById('calculatorPaceM');
+      const calculatorPaceH = document.getElementById('calculatorPaceH');
+      const calculatorDegS = document.getElementById('calculatorDegS');
+      const calculatorDegM = document.getElementById('calculatorDegM');
+      const calculatorDegH = document.getElementById('calculatorDegH');
 
-      if (calculatorPitLoss && appState.calculator.pitLoss !== null) {
-        calculatorPitLoss.value = appState.calculator.pitLoss;
-      }
-      if (calculatorScLength && appState.calculator.scLength !== null) {
-        calculatorScLength.value = appState.calculator.scLength;
-      }
-      if (calculatorFuelEffect) {
-        calculatorFuelEffect.value = appState.paceModel.fuelEffect;
-      }
+      if (calculatorPitLoss && appState.calculator.pitLoss !== null) calculatorPitLoss.value = appState.calculator.pitLoss;
+      if (calculatorScLength && appState.calculator.scLength !== null) calculatorScLength.value = appState.calculator.scLength;
+      if (calculatorFuelEffect) calculatorFuelEffect.value = appState.paceModel.fuelEffect;
+      if (calculatorPaceS && appState.calculator.paceS !== null) calculatorPaceS.value = appState.calculator.paceS;
+      if (calculatorPaceM && appState.calculator.paceM !== null) calculatorPaceM.value = appState.calculator.paceM;
+      if (calculatorPaceH && appState.calculator.paceH !== null) calculatorPaceH.value = appState.calculator.paceH;
+      if (calculatorDegS) calculatorDegS.value = appState.paceModel.degSoft;
+      if (calculatorDegM) calculatorDegM.value = appState.paceModel.degMedium;
+      if (calculatorDegH) calculatorDegH.value = appState.paceModel.degHard;
 
-      document.getElementById('calculatorPaceS').value = appState.calculator.paceS || '';
-      document.getElementById('calculatorPaceM').value = appState.calculator.paceM || '';
-      document.getElementById('calculatorPaceH').value = appState.calculator.paceH || '';
-      document.getElementById('calculatorDegS').value = appState.paceModel.degSoft;
-      document.getElementById('calculatorDegM').value = appState.paceModel.degMedium;
-      document.getElementById('calculatorDegH').value = appState.paceModel.degHard;
-
-      // Restore strategy inputs
+      // Calculator strategies
       const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-      strategyInputs.forEach((input, idx) => {
-        if (idx < appState.calculator.strategies.length) {
-          input.value = appState.calculator.strategies[idx];
+      strategyInputs.forEach((input, index) => {
+        if (appState.calculator.strategies[index] !== undefined) {
+          input.value = appState.calculator.strategies[index];
         }
       });
     }
@@ -2023,71 +2484,6 @@
       }
     }
 
-    /**
-     * Capture current UI state and save to appState
-     * Called before data reload or when switching sessions
-     */
-    function captureUIState() {
-      // Shared filters
-      appState.filters.minLap = parseInt(document.getElementById('filterMinLap').value) || 1;
-      appState.filters.endLaps = parseInt(document.getElementById('filterEndLaps').value) || 1;
-      appState.filters.minStintLap = parseInt(document.getElementById('filterMinStintLap').value) || 0;
-      appState.filters.minDist = parseFloat(document.getElementById('filterMinDist').value) || 3;
-      appState.filters.rainfall = document.getElementById('filterRainfall').checked;
-      appState.filters.safetyCar = document.getElementById('filterSafetyCar').checked;
-      appState.filters.pitLaps = document.getElementById('filterPitLaps').checked;
-      appState.filters.includeLapped = document.getElementById('filterIncludeLapped').checked;
-      appState.filters.includeRetired = document.getElementById('filterIncludeRetired').checked;
-
-      // Lap Time tab
-      appState.paceModel.degHard = parseFloat(document.getElementById('degHard').value) || 0.05;
-      appState.paceModel.degMedium = parseFloat(document.getElementById('degMedium').value) || 0.08;
-      appState.paceModel.degSoft = parseFloat(document.getElementById('degSoft').value) || 0.12;
-      appState.paceModel.fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0.025;
-      appState.lapTime.fuelAdjust = document.getElementById('fuelAdjustToggle').classList.contains('active');
-      appState.lapTime.tyreLifeAdjust = document.getElementById('tyreLifeAdjustToggle').classList.contains('active');
-
-      // Tyre Deg tab
-      appState.tyreDeg.filterMinRows = parseInt(document.getElementById('tyreDegFilterMinRows').value) || 5;
-      appState.tyreDeg.filterMinCorr = parseFloat(document.getElementById('tyreDegFilterMinCorr').value) || -1.0;
-      appState.tyreDeg.fuelEffectSlider = parseFloat(document.getElementById('tyreDegFuelEffectSlider').value) || 0.025;
-      appState.tyreDeg.fuelAdjust = document.getElementById('tyreDegFuelAdjustToggle').classList.contains('active');
-
-      // Fuel Effect tab
-      const fuelEffectInput = document.getElementById('fuelEffectInput');
-      if (fuelEffectInput) {
-        appState.fuelEffect.fuelEffectInput = parseFloat(fuelEffectInput.value) || 0.025;
-      }
-
-      // Race Trace tab
-      const raceTraceLapMin = document.getElementById('raceTraceLapMin');
-      const raceTraceLapMax = document.getElementById('raceTraceLapMax');
-      if (raceTraceLapMin && raceTraceLapMax) {
-        appState.raceTrace.lapMin = parseInt(raceTraceLapMin.value) || 1;
-        appState.raceTrace.lapMax = parseInt(raceTraceLapMax.value) || 1;
-      }
-
-      // Calculator tab
-      const calculatorPitLoss = document.getElementById('calculatorPitLoss');
-      const calculatorScLength = document.getElementById('calculatorScLength');
-      const calculatorFuelEffect = document.getElementById('calculatorFuelEffect');
-
-      if (calculatorPitLoss) appState.calculator.pitLoss = parseFloat(calculatorPitLoss.value) || null;
-      if (calculatorScLength) appState.calculator.scLength = parseInt(calculatorScLength.value) || null;
-      if (calculatorFuelEffect) appState.paceModel.fuelEffect = parseFloat(calculatorFuelEffect.value) || 0.025;
-
-      appState.calculator.paceS = parseFloat(document.getElementById('calculatorPaceS').value) || null;
-      appState.calculator.paceM = parseFloat(document.getElementById('calculatorPaceM').value) || null;
-      appState.calculator.paceH = parseFloat(document.getElementById('calculatorPaceH').value) || null;
-      appState.paceModel.degSoft = parseFloat(document.getElementById('calculatorDegS').value) || 0.12;
-      appState.paceModel.degMedium = parseFloat(document.getElementById('calculatorDegM').value) || 0.08;
-      appState.paceModel.degHard = parseFloat(document.getElementById('calculatorDegH').value) || 0.05;
-
-      // Capture strategy inputs
-      const strategyInputs = document.querySelectorAll('.calculatorStrategyInput');
-      appState.calculator.strategies = Array.from(strategyInputs).map(input => input.value);
-    }
-
     // ============================================================================
     // TAB SWITCHING
     // ============================================================================
@@ -2122,6 +2518,9 @@
 
       appState.currentActiveTab = tabName;
 
+      // Update URL to reflect tab change
+      updateURLFromState();
+
       // Initialize panel if data is available
       if (currentSessionData) {
         initializePanel(tabName, currentSessionData);
@@ -2132,9 +2531,9 @@
       if (!sessionData || sessionData.length === 0) return;
 
       // Get current session info
-      const year = seasonSel.value;
-      const [round, meeting] = gpSel.value.split('||');
-      const sessionType = sessionSel.value;
+      const year = appState.session.season;
+      const [round, meeting] = appState.session.gp.split('||');
+      const sessionType = appState.session.sessionType;
 
       switch(panelName) {
         case 'strategy':
@@ -2149,8 +2548,21 @@
           const lapNumbers = sessionData.map(r => parseInt(r.lap_LapNumber)).filter(n => !isNaN(n));
           const minLapNum = Math.min(...lapNumbers);
           const maxLapNum = Math.max(...lapNumbers);
-          raceTraceLapMin.value = minLapNum;
-          raceTraceLapMax.value = maxLapNum;
+
+          // Only set default values if not restoring from permalink
+          // If appState has non-default values, use those instead
+          if (appState.raceTrace.lapMin !== 1 || appState.raceTrace.lapMax !== 1) {
+            // Restoring from permalink - use appState values
+            raceTraceLapMin.value = appState.raceTrace.lapMin;
+            raceTraceLapMax.value = appState.raceTrace.lapMax;
+          } else {
+            // No permalink - use data defaults
+            raceTraceLapMin.value = minLapNum;
+            raceTraceLapMax.value = maxLapNum;
+            appState.raceTrace.lapMin = minLapNum;
+            appState.raceTrace.lapMax = maxLapNum;
+          }
+
           raceTraceLapMin.min = minLapNum;
           raceTraceLapMax.max = maxLapNum;
           calculateRaceTraceGaps(sessionData);
@@ -2201,7 +2613,8 @@
         case 'tyre-deg':
           // Initialize tyre deg panel
           // Clear previous stints tracker for event change detection
-          appState.tyreDeg.selectedStints.clear();
+          // Note: Don't clear appState.tyreDeg.selectedStints here - it may contain
+          // selections restored from URL. Let processTyreDegData handle selection logic.
           window.tyreDegPreviousFilteredStints = [];
 
           // Display tyre choices for the selected event
@@ -2222,22 +2635,19 @@
           // Initialize fuel effect panel
           const filteredFuelEffectRows = applyFuelEffectFilters(sessionData);
 
-          // Clear selections before displaying table
-          appState.fuelEffect.selectedRows.clear();
-
-          // Build table with no selections
+          // Build table first (populates fuelEffectFilteredGroups)
           displayFuelEffectGroupsTable(filteredFuelEffectRows);
 
-          // Auto-select all rows if none are selected
+          // Restore row selections from state (validates against current filtered data)
+          // This may contain selections from URL that need to be preserved
+          restoreDataDependentSelections('fuel-effect');
+
+          // Auto-select all rows only if no valid selections were restored
           if (appState.fuelEffect.selectedRows.size === 0) {
             fuelEffectFilteredGroups.forEach((group, key) => {
               appState.fuelEffect.selectedRows.add(key);
             });
           }
-
-          // Restore row selections from state AFTER auto-selecting
-          // (so fuelEffectFilteredGroups is populated)
-          restoreDataDependentSelections('fuel-effect');
 
           // Re-render table and chart to reflect selections
           displayFuelEffectGroupsTable(filteredFuelEffectRows);
@@ -2254,11 +2664,13 @@
     // ============================================================================
 
     function init() {
-      initTabNavigation();
+      // Load state from URL first (before restoring to UI)
+      loadStateFromURL();
 
-      // Restore UI state from appState (for simple inputs)
-      // Data-dependent selections will be restored when data loads
+      // Restore UI elements from appState
       restoreStateToUI();
+
+      initTabNavigation();
 
       // Set up reload data button
       reloadDataBtn.addEventListener('click', () => {
@@ -2266,6 +2678,8 @@
       });
 
       DriverInfo.load(loadMainCSV);
+
+      switchTab(appState.currentActiveTab);
     }
 
     function loadMainCSV() {
@@ -2293,7 +2707,37 @@
           }
 
           indexSessions(allRows);
-          buildSeasonDropdown();
+
+          // If we have a session to restore, mark as restoring BEFORE building dropdowns
+          // This prevents the dropdown onChange handlers from overwriting appState
+          const shouldRestore = appState.session.season || appState.session.gp || appState.session.sessionType;
+          if (shouldRestore) {
+            window.permalinkSession = { isRestoring: true };
+          }
+
+          UIHelpers.populateSeasons(seasonSel, sessionsByKey, {
+            // onChange: onSeasonChange
+          });
+
+          // Restore session from appState if available
+          if (appState.session.season) {
+            const season = appState.session.season;
+            // Set season dropdown - this will trigger onSeasonChange which handles the rest
+            const seasonOption = seasonSel.querySelector(`option[value="${season}"]`);
+            if (seasonOption) {
+              seasonSel.value = season;
+            } else {
+              console.warn('Season not found in dropdown:', season);
+            }
+          };
+
+          onSeasonChange();
+
+          // Clear restoration flag after explicit restoration completes
+          if (window.permalinkSession && window.permalinkSession.isRestoring) {
+            window.permalinkSession.isRestoring = false;
+          }
+
           statusMessage.textContent = `${allRows.length} laps loaded`;
         },
         error: function (err) {
@@ -2331,39 +2775,77 @@
       });
     }
 
-    function buildSeasonDropdown() {
-      UIHelpers.populateSeasons(seasonSel, sessionsByKey, {
-        onChange: onSeasonChange
-      });
-    }
+    
 
     function onSeasonChange() {
       const selectedSeason = seasonSel.value;
+
+      // Only update appState if not currently restoring from permalink
+      if (!window.permalinkSession || !window.permalinkSession.isRestoring) {
+        appState.session.season = selectedSeason;
+      }
+
       sessionSel.innerHTML = '';
       sessionSel.disabled = true;
 
       currentSessionData = null;
 
       UIHelpers.populateGPs(gpSel, sessionsByKey, selectedSeason, {
-        onChange: onGPChange
+        // onChange: onGPChange
       });
+
+      // Restore GP from appState if restoring from permalink
+      if (window.permalinkSession && window.permalinkSession.isRestoring && appState.session.gp) {
+        const gp = appState.session.gp;
+        const gpOption = gpSel.querySelector(`option[value="${gp}"]`);
+        if (gpOption) {
+          gpSel.value = gp;
+          
+        } else {
+          console.warn('Permalink GP not found in dropdown:', gp);
+        }
+      };
+      onGPChange();
     }
 
     function onGPChange() {
       const selectedSeason = seasonSel.value;
       const selectedGP = gpSel.value;
 
+      // Only update appState if not currently restoring from permalink
+      if (!window.permalinkSession || !window.permalinkSession.isRestoring) {
+        appState.session.gp = selectedGP;
+      }
+
       currentSessionData = null;
 
       UIHelpers.populateSessions(sessionSel, sessionsByKey, selectedSeason, selectedGP, {
-        onChange: onSessionChange
+        // onChange: onSessionChange
       });
+
+      // Restore session from appState if restoring from permalink
+      if (window.permalinkSession && window.permalinkSession.isRestoring && appState.session.sessionType) {
+        const session = appState.session.sessionType;
+        const sessionOption = sessionSel.querySelector(`option[value="${session}"]`);
+        if (sessionOption) {
+          sessionSel.value = session;
+          
+        } else {
+          console.warn('Permalink session not found in dropdown:', session);
+        }
+      };
+      onSessionChange();
     }
 
     function onSessionChange() {
       const selectedSeason = seasonSel.value;
       const selectedGP = gpSel.value;
       const selectedSession = sessionSel.value;
+
+      // Only update appState if not currently restoring from permalink
+      if (!window.permalinkSession || !window.permalinkSession.isRestoring) {
+        appState.session.sessionType = selectedSession;
+      }
 
       if (!selectedSeason || !selectedGP || !selectedSession) {
         currentSessionData = null;
@@ -2380,8 +2862,10 @@
                String(r.session_type || "").trim() === selectedSession;
       });
 
-      // Clear selected drivers when a new session is selected
-      appState.selectedDrivers.clear();
+      // Clear selected drivers when a new session is selected (unless restoring from permalink)
+      if (!window.permalinkSession || !window.permalinkSession.isRestoring) {
+        appState.selectedDrivers.clear();
+      }
 
       // Apply circuit config once for the new session (before initializing any panels)
       const circuitName = currentSessionData.length > 0 ? String(currentSessionData[0].circuit_name || "").trim() : "";
@@ -2427,6 +2911,20 @@
       if (currentSessionData.length > 0) {
         initializePanel(appState.currentActiveTab, currentSessionData);
       }
+
+      // Restore tab if we're restoring from permalink and tab is different from current
+      if (window.permalinkSession && window.permalinkSession.isRestoring) {
+        const tab = appState.currentActiveTab;
+        // Get the default tab name (what the page loads to)
+        const currentlyActiveTab = document.querySelector('.tab-button.active')?.dataset.tab || 'strategy';
+        if (tab && tab !== currentlyActiveTab) {
+          switchTab(tab);
+        }
+        // Note: Don't clear isRestoring flag here - it's cleared after explicit restoration completes
+      }
+
+      // Update URL with new session
+      updateURLFromState();
     }
 
     // ============================================================================
@@ -2807,6 +3305,9 @@
         }
 
         updateSelectAllState();
+
+        // Update URL with new driver selection
+        updateURLFromState();
       });
 
       sortedDriverFinishInfo.forEach(({ driver }) => {
@@ -2837,6 +3338,9 @@
 
           // Update select all checkbox state
           updateSelectAllState();
+
+          // Update URL with new driver selection
+          updateURLFromState();
         });
 
         const label = document.createElement('label');
@@ -3389,15 +3893,21 @@
       });
 
       fuelAdjustToggle.addEventListener('click', function() {
-        this.classList.toggle('active');
-        saveToState('lapTime.fuelAdjust', this.classList.contains('active'));
+        // Toggle state in appState first
+        const newValue = !appState.lapTime.fuelAdjust;
+        saveToState('lapTime.fuelAdjust', newValue);
+        // Sync CSS class with appState
+        this.classList.toggle('active', newValue);
         renderLapTimeChart();
         renderLapTimeSummaryTable();
       });
 
       tyreLifeAdjustToggle.addEventListener('click', function() {
-        this.classList.toggle('active');
-        saveToState('lapTime.tyreLifeAdjust', this.classList.contains('active'));
+        // Toggle state in appState first
+        const newValue = !appState.lapTime.tyreLifeAdjust;
+        saveToState('lapTime.tyreLifeAdjust', newValue);
+        // Sync CSS class with appState
+        this.classList.toggle('active', newValue);
         renderLapTimeChart();
         renderLapTimeSummaryTable();
       });
@@ -3737,6 +4247,9 @@
         }
 
         updateSelectAllState();
+
+        // Update URL with new driver selection
+        updateURLFromState();
       });
 
       drivers.forEach(driver => {
@@ -3767,6 +4280,9 @@
 
           // Update select all checkbox state
           updateSelectAllState();
+
+          // Update URL with new driver selection
+          updateURLFromState();
         });
 
         const label = document.createElement('label');
@@ -3810,8 +4326,8 @@
         lapTimeChartInstance = echarts.init(lapTimeChart);
       }
 
-      const fuelAdjusted = fuelAdjustToggle.classList.contains('active');
-      const tyreLifeAdjusted = tyreLifeAdjustToggle.classList.contains('active');
+      const fuelAdjusted = appState.lapTime.fuelAdjust;
+      const tyreLifeAdjusted = appState.lapTime.tyreLifeAdjust;
       const fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0;
       const degHard = parseFloat(document.getElementById('degHard').value) || 0;
       const degMedium = parseFloat(document.getElementById('degMedium').value) || 0;
@@ -4145,8 +4661,8 @@
       }
 
       // Get adjustment settings
-      const fuelAdjusted = fuelAdjustToggle.classList.contains('active');
-      const tyreLifeAdjusted = tyreLifeAdjustToggle.classList.contains('active');
+      const fuelAdjusted = appState.lapTime.fuelAdjust;
+      const tyreLifeAdjusted = appState.lapTime.tyreLifeAdjust;
       const fuelEffect = parseFloat(document.getElementById('fuelEffect').value) || 0;
       const degHard = parseFloat(document.getElementById('degHard').value) || 0;
       const degMedium = parseFloat(document.getElementById('degMedium').value) || 0;
@@ -4367,6 +4883,7 @@
           if (Object.keys(raceTraceDriverLines).length > 0) {
             renderRaceTraceChart();
           }
+          updateURLFromState();
         });
         tdCheckbox.appendChild(checkbox);
         tr.appendChild(tdCheckbox);
@@ -4491,7 +5008,8 @@
           // Also update race trace chart if it has data
           if (Object.keys(raceTraceDriverLines).length > 0) {
             renderRaceTraceChart();
-          }
+          };
+          updateURLFromState();
         });
 
         // Set initial state of select all checkbox (checked/unchecked/indeterminate)
@@ -4614,8 +5132,11 @@
 
       // Fuel adjust toggle for lap time chart
       tyreDegFuelAdjustToggle.addEventListener('click', function() {
-        this.classList.toggle('active');
-        saveToState('tyreDeg.fuelAdjust', this.classList.contains('active'));
+        // Toggle state in appState first
+        const newValue = !appState.tyreDeg.fuelAdjust;
+        saveToState('tyreDeg.fuelAdjust', newValue);
+        // Sync CSS class with appState
+        this.classList.toggle('active', newValue);
         renderTyreDegLapTimeChart();
       });
     }
@@ -4660,6 +5181,7 @@
         }
         // selectedSet is already updated directly, no need to save
         onChange();
+        updateURLFromState();
       });
 
       // Update checked / indeterminate state
@@ -5057,7 +5579,8 @@
       // Handle stint selection on event change
       if (isEventChange) {
         // Event changed - restore from state or select all
-        appState.tyreDeg.selectedStints.clear();
+        // Note: Don't clear here - restoreDataDependentSelections needs to read
+        // the current values (which may have been loaded from URL) before validating them
         restoreDataDependentSelections('tyre-deg');
 
         // If no stints were restored from state, select all stints
@@ -5251,6 +5774,7 @@
           }
           renderTyreDegScatterChart();
           renderTyreDegLapTimeChart();
+          updateURLFromState();
         });
         tdCheckbox.appendChild(checkbox);
         tr.appendChild(tdCheckbox);
@@ -5743,7 +6267,7 @@
         return;
       }
 
-      const fuelAdjusted = tyreDegFuelAdjustToggle.classList.contains('active');
+      const fuelAdjusted = appState.tyreDeg.fuelAdjust;
       const fuelEffect = parseFloat(document.getElementById('tyreDegFuelEffectSlider').value) || 0;
 
       const series = [];
@@ -6387,17 +6911,21 @@
         return groupA.tyreLife - groupB.tyreLife;
       });
 
-      // Detect and auto-select newly visible rows
+      // Detect and auto-select newly visible rows (only on filter changes, not initial load)
       const currentKeys = sortedGroups.map(([key]) => key);
       const previousKeysSet = new Set(fuelEffectPreviousFilteredKeys || []);
 
-      currentKeys.forEach(key => {
-        const isNew = !previousKeysSet.has(key);
-        if (isNew && !appState.fuelEffect.selectedRows.has(key)) {
-          // New row that just appeared because of filters -> auto-select it
-          appState.fuelEffect.selectedRows.add(key);
-        }
-      });
+      // Only auto-select new rows if this is a filter change (not initial load)
+      // On initial load, selections come from URL or default to all (handled in initializePanel)
+      if (fuelEffectPreviousFilteredKeys && fuelEffectPreviousFilteredKeys.length > 0) {
+        currentKeys.forEach(key => {
+          const isNew = !previousKeysSet.has(key);
+          if (isNew && !appState.fuelEffect.selectedRows.has(key)) {
+            // New row that just appeared because of filters -> auto-select it
+            appState.fuelEffect.selectedRows.add(key);
+          }
+        });
+      }
 
       // Store filtered groups
       fuelEffectFilteredGroups.clear();
@@ -6485,6 +7013,7 @@
             tr.classList.remove('stint-selected');
           }
           renderFuelEffectScatterPlot(sortedGroups);
+          updateURLFromState();
         });
         tdCheckbox.appendChild(checkbox);
         tr.appendChild(tdCheckbox);
