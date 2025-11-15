@@ -2676,7 +2676,7 @@
           lapTimeDriverOrder = determineFinishingOrder(sessionData);
 
           // Then apply filters and process data with the correct order
-          const filteredRows = applyLapTimeFilters(sessionData);
+          const filteredRows = applySharedFilters(sessionData, 'lap-time');
           processLapTimeData(filteredRows, lapTimeDriverOrder);
 
           // Restore driver selections from state AFTER processing data
@@ -2713,7 +2713,7 @@
           break;
         case 'fuel-effect':
           // Initialize fuel effect panel
-          const filteredFuelEffectRows = applyFuelEffectFilters(sessionData);
+          const filteredFuelEffectRows = applySharedFilters(sessionData, 'fuel-effect');
 
           // Build table first (populates fuelEffectFilteredGroups)
           displayFuelEffectGroupsTable(filteredFuelEffectRows);
@@ -4013,7 +4013,7 @@
       // Determine finishing order from UNFILTERED data to get accurate positions
       lapTimeDriverOrder = determineFinishingOrder(currentSessionData);
       // Then apply filters and process data with the correct order
-      const filteredRows = applyLapTimeFilters(currentSessionData);
+      const filteredRows = applySharedFilters(currentSessionData, 'lap-time');
       processLapTimeData(filteredRows, lapTimeDriverOrder);
     }
 
@@ -4100,16 +4100,78 @@
       });
     }
 
-    function applyLapTimeFilters(rows) {
-      const lapsToDiscard = parseInt(document.getElementById("filterMinLap").value);
+    const FILTER_CONFIGS = {
+      'lap-time': {
+        minLapId: 'filterMinLap',
+        endLapsId: 'filterEndLaps',
+        minStintLapId: 'filterMinStintLap',
+        minDistId: 'filterMinDist',
+        rainfallId: 'filterRainfall',
+        safetyCarId: 'filterSafetyCar',
+        pitLapsId: 'filterPitLaps',
+        includeLappedId: 'filterIncludeLapped',
+        includeRetiredId: 'filterIncludeRetired'
+      },
+      'tyre-deg': {
+        minLapId: 'tyreDegFilterMinLap',
+        endLapsId: 'tyreDegFilterEndLaps',
+        minStintLapId: 'tyreDegFilterMinStintLap',
+        minDistId: 'tyreDegFilterMinDist',
+        rainfallId: 'tyreDegFilterRainfall',
+        safetyCarId: 'tyreDegFilterSafetyCar',
+        pitLapsId: 'tyreDegFilterPitLaps',
+        includeLappedId: 'tyreDegFilterIncludeLapped',
+        includeRetiredId: 'tyreDegFilterIncludeRetired'
+      },
+      'fuel-effect': {
+        minLapId: 'fuelEffectFilterMinLap',
+        endLapsId: 'fuelEffectFilterEndLaps',
+        minStintLapId: 'fuelEffectFilterMinStintLap',
+        minDistId: 'fuelEffectFilterMinDist',
+        rainfallId: 'fuelEffectFilterRainfall',
+        safetyCarId: 'fuelEffectFilterSafetyCar',
+        pitLapsId: 'fuelEffectFilterPitLaps',
+        includeLappedId: 'fuelEffectFilterIncludeLapped',
+        includeRetiredId: 'fuelEffectFilterIncludeRetired'
+      }
+    };
+
+    function applySharedFilters(rows, scope) {
+      const config = FILTER_CONFIGS[scope];
+      if (!config) {
+        console.warn('Unknown filter scope:', scope);
+        return rows;
+      }
+
+      const parseIntValue = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return 0;
+        const value = parseInt(el.value, 10);
+        return isNaN(value) ? 0 : value;
+      };
+
+      const parseFloatValue = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return 0;
+        const value = parseFloat(el.value);
+        return isNaN(value) ? 0 : value;
+      };
+
+      const getCheckboxValue = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.checked : true;
+      };
+
+      const lapsToDiscard = parseIntValue(config.minLapId);
       const minLap = lapsToDiscard + 1;
-      const endLaps = parseInt(document.getElementById("filterEndLaps").value);
-      const minDist = parseFloat(document.getElementById("filterMinDist").value);
-      const includeRainfall = document.getElementById("filterRainfall").checked;
-      const includeSafetyCar = document.getElementById("filterSafetyCar").checked;
-      const includePitLaps = document.getElementById("filterPitLaps").checked;
-      const includeLapped = document.getElementById('filterIncludeLapped').checked;
-      const includeRetired = document.getElementById('filterIncludeRetired').checked;
+      const endLaps = parseIntValue(config.endLapsId);
+      const minStintLap = parseIntValue(config.minStintLapId);
+      const minDist = parseFloatValue(config.minDistId);
+      const includeRainfall = getCheckboxValue(config.rainfallId);
+      const includeSafetyCar = getCheckboxValue(config.safetyCarId);
+      const includePitLaps = getCheckboxValue(config.pitLapsId);
+      const includeLapped = getCheckboxValue(config.includeLappedId);
+      const includeRetired = getCheckboxValue(config.includeRetiredId);
 
       const filteredRows = rows.filter(r => {
         const lapNum = parseInt(r.lap_LapNumber);
@@ -4121,36 +4183,36 @@
           if (lapNum > maxLap) return false;
         }
 
-        const status = String(r.finish_status ?? "").trim();
+        const status = String(r.finish_status ?? '').trim();
         const plusLapsMatch = status.match(/^\+(\d+)\sLaps$/);
         const lapsBehind = plusLapsMatch ? Number(plusLapsMatch[1]) : 0;
         if (lapsBehind > 1) return false;
 
-        const isLapped = status === "Lapped" || status === "+1 Lap";
+        const isLapped = status === 'Lapped' || status === '+1 Lap';
         if (!includeLapped && isLapped) return false;
 
-        const isFinished = status === "Finished" || isLapped;
+        const isFinished = status === 'Finished' || isLapped;
         const isRetired = !isFinished;
         if (!includeRetired && isRetired) return false;
 
         if (!includeRainfall) {
-          const rainfall = String(r.weather_Rainfall || "").trim().toLowerCase();
-          if (rainfall === "true" || rainfall === "1") return false;
+          const rainfall = String(r.weather_Rainfall || '').trim().toLowerCase();
+          if (rainfall === 'true' || rainfall === '1') return false;
         }
 
         if (!includeSafetyCar) {
-          const trackStatus = String(r.lap_TrackStatus || "").trim();
-          if (trackStatus.includes("4") || trackStatus.includes("5") ||
-              trackStatus.includes("6") || trackStatus.includes("7")) {
+          const trackStatus = String(r.lap_TrackStatus || '').trim();
+          if (trackStatus.includes('4') || trackStatus.includes('5') ||
+              trackStatus.includes('6') || trackStatus.includes('7')) {
             return false;
           }
         }
 
         if (!includePitLaps) {
-          const pitIn = String(r.lap_PitInTime || "").trim();
-          const pitOut = String(r.lap_PitOutTime || "").trim();
-          if ((pitIn && pitIn.toLowerCase() !== "na" && pitIn !== "") ||
-              (pitOut && pitOut.toLowerCase() !== "na" && pitOut !== "")) {
+          const pitIn = String(r.lap_PitInTime || '').trim();
+          const pitOut = String(r.lap_PitOutTime || '').trim();
+          if ((pitIn && pitIn.toLowerCase() !== 'na' && pitIn !== '') ||
+              (pitOut && pitOut.toLowerCase() !== 'na' && pitOut !== '')) {
             return false;
           }
         }
@@ -4161,19 +4223,23 @@
         return true;
       });
 
-      // filter to remove the lowest n laps per stint
-      const minStintLap = parseInt(document.getElementById("filterMinStintLap").value);
+      if (minStintLap <= 0) {
+        return filteredRows;
+      }
+
       const byStintAndDriver = new Map();
       for (const row of filteredRows) {
         const key = `${row.lap_Driver}::${row.lap_Stint}`;
         if (!byStintAndDriver.has(key)) byStintAndDriver.set(key, []);
         byStintAndDriver.get(key).push(row);
       }
+
       const toRemove = new Set();
-      for (const rows of byStintAndDriver.values()) {
-        const sorted = [...rows].sort((a, b) => a.lap_LapNumber - b.lap_LapNumber);
+      for (const stintRows of byStintAndDriver.values()) {
+        const sorted = [...stintRows].sort((a, b) => a.lap_LapNumber - b.lap_LapNumber);
         for (const row of sorted.slice(0, minStintLap)) toRemove.add(row);
       }
+
       return filteredRows.filter(row => !toRemove.has(row));
     }
 
@@ -5541,77 +5607,8 @@
       }
     });
 
-    function applyTyreDegFilters(rows) {
-      const lapsToDiscard = parseInt(document.getElementById('tyreDegFilterMinLap').value);
-      const minLap = lapsToDiscard + 1;
-      const endLaps = parseInt(document.getElementById('tyreDegFilterEndLaps').value);
-      const minStintLap = parseInt(document.getElementById('tyreDegFilterMinStintLap').value);
-      const minDist = parseFloat(document.getElementById('tyreDegFilterMinDist').value);
-      const includeRainfall = document.getElementById('tyreDegFilterRainfall').checked;
-      const includeSafetyCar = document.getElementById('tyreDegFilterSafetyCar').checked;
-      const includePitLaps = document.getElementById('tyreDegFilterPitLaps').checked;
-      const includeLapped = document.getElementById('tyreDegFilterIncludeLapped').checked;
-      const includeRetired = document.getElementById('tyreDegFilterIncludeRetired').checked;
-
-      return rows.filter(r => {
-        // Filter by stint lap first (before other filters)
-        if (minStintLap > 0) {
-          const tyreLife = parseInt(r.lap_TyreLife);
-          if (!isNaN(tyreLife) && tyreLife <= minStintLap) return false;
-        }
-
-        const lapNum = parseInt(r.lap_LapNumber);
-        if (isNaN(lapNum) || lapNum < minLap) return false;
-
-        const schedLaps = parseInt(r.sched_laps);
-        if (!isNaN(schedLaps)) {
-          const maxLap = schedLaps - endLaps;
-          if (lapNum > maxLap) return false;
-        }
-
-        const status = String(r.finish_status ?? "").trim();
-        const plusLapsMatch = status.match(/^\+(\d+)\sLaps$/);
-        const lapsBehind = plusLapsMatch ? Number(plusLapsMatch[1]) : 0;
-        if (lapsBehind > 1) return false;
-
-        const isLapped = status === "Lapped" || status === "+1 Lap";
-        if (!includeLapped && isLapped) return false;
-
-        const isFinished = status === "Finished" || isLapped;
-        const isRetired = !isFinished;
-        if (!includeRetired && isRetired) return false;
-
-        if (!includeRainfall) {
-          const rainfall = String(r.weather_Rainfall || "").trim().toLowerCase();
-          if (rainfall === "true" || rainfall === "1") return false;
-        }
-
-        if (!includeSafetyCar) {
-          const trackStatus = String(r.lap_TrackStatus || "").trim();
-          if (trackStatus.includes("4") || trackStatus.includes("5") ||
-              trackStatus.includes("6") || trackStatus.includes("7")) {
-            return false;
-          }
-        }
-
-        if (!includePitLaps) {
-          const pitIn = String(r.lap_PitInTime || "").trim();
-          const pitOut = String(r.lap_PitOutTime || "").trim();
-          if ((pitIn && pitIn.toLowerCase() !== "na" && pitIn !== "") ||
-              (pitOut && pitOut.toLowerCase() !== "na" && pitOut !== "")) {
-            return false;
-          }
-        }
-
-        const dist = parseFloat(r.min_dist);
-        if (!isNaN(dist) && dist < minDist) return false;
-
-        return true;
-      });
-    }
-
     function processTyreDegData(sessionData) {
-      const filteredRows = applyTyreDegFilters(sessionData);
+      const filteredRows = applySharedFilters(sessionData, 'tyre-deg');
 
       // Group by driver and stint
       const groups = new Map();
@@ -6543,63 +6540,63 @@
     function setupFuelEffectFilterListeners() {
       document.getElementById('fuelEffectFilterMinLap').addEventListener('input', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterEndLaps').addEventListener('input', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterMinStintLap').addEventListener('input', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterMinDist').addEventListener('input', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterRainfall').addEventListener('change', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterSafetyCar').addEventListener('change', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterPitLaps').addEventListener('change', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterIncludeLapped').addEventListener('change', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
 
       document.getElementById('fuelEffectFilterIncludeRetired').addEventListener('change', () => {
         if (currentSessionData && currentSessionData.length > 0) {
-          const filteredRows = applyFuelEffectFilters(currentSessionData);
+          const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
           displayFuelEffectGroupsTable(filteredRows);
         }
       });
@@ -6613,86 +6610,6 @@
         fuelEffectChart.resize();
       }
     });
-
-    function applyFuelEffectFilters(rows) {
-      const lapsToDiscard = parseInt(document.getElementById('fuelEffectFilterMinLap').value);
-      const minLap = lapsToDiscard + 1;
-      const endLaps = parseInt(document.getElementById('fuelEffectFilterEndLaps').value);
-      const minStintLap = parseInt(document.getElementById('fuelEffectFilterMinStintLap').value);
-      const minDist = parseFloat(document.getElementById('fuelEffectFilterMinDist').value);
-      const includeRainfall = document.getElementById('fuelEffectFilterRainfall').checked;
-      const includeSafetyCar = document.getElementById('fuelEffectFilterSafetyCar').checked;
-      const includePitLaps = document.getElementById('fuelEffectFilterPitLaps').checked;
-      const includeLapped = document.getElementById('fuelEffectFilterIncludeLapped').checked;
-      const includeRetired = document.getElementById('fuelEffectFilterIncludeRetired').checked;
-
-      return rows.filter(r => {
-        // Session type filter - only 'R' (Race)
-        const sessionType = String(r.session_type || "").trim();
-        if (sessionType !== 'R') return false;
-
-        // Filter by stint lap first (before other filters)
-        if (minStintLap > 0) {
-          const tyreLife = parseInt(r.lap_TyreLife);
-          if (!isNaN(tyreLife) && tyreLife <= minStintLap) return false;
-        }
-
-        // Min lap number
-        const lapNum = parseInt(r.lap_LapNumber);
-        if (isNaN(lapNum) || lapNum < minLap) return false;
-
-        // Max lap number (sched_laps - endLaps)
-        const schedLaps = parseInt(r.sched_laps);
-        if (!isNaN(schedLaps)) {
-          const maxLap = schedLaps - endLaps;
-          if (lapNum > maxLap) return false;
-        }
-
-        // Finish status filters
-        const status = String(r.finish_status ?? "").trim();
-        const plusLapsMatch = status.match(/^\+(\d+)\sLaps$/);
-        const lapsBehind = plusLapsMatch ? Number(plusLapsMatch[1]) : 0;
-        if (lapsBehind > 1) return false; // Always exclude "+2 Laps", "+3 Laps", etc.
-
-        const isLapped = status === "Lapped" || status === "+1 Lap";
-        if (!includeLapped && isLapped) return false;
-
-        const isFinished = status === "Finished" || isLapped;
-        const isRetired = !isFinished;
-        if (!includeRetired && isRetired) return false;
-
-        // Rainfall filter
-        if (!includeRainfall) {
-          const rainfall = String(r.weather_Rainfall || "").trim().toLowerCase();
-          if (rainfall === "true" || rainfall === "1") return false;
-        }
-
-        // Safety car filter
-        if (!includeSafetyCar) {
-          const trackStatus = String(r.lap_TrackStatus || "").trim();
-          if (trackStatus.includes("4") || trackStatus.includes("5") ||
-              trackStatus.includes("6") || trackStatus.includes("7")) {
-            return false;
-          }
-        }
-
-        // Pit laps filter
-        if (!includePitLaps) {
-          const pitIn = String(r.lap_PitInTime || "").trim();
-          const pitOut = String(r.lap_PitOutTime || "").trim();
-          if ((pitIn && pitIn.toLowerCase() !== "na" && pitIn !== "") ||
-              (pitOut && pitOut.toLowerCase() !== "na" && pitOut !== "")) {
-            return false;
-          }
-        }
-
-        // Min distance filter
-        const dist = parseFloat(r.min_dist);
-        if (!isNaN(dist) && dist < minDist) return false;
-
-        return true;
-      });
-    }
 
     function renderFuelEffectScatterPlot(groups) {
       // Filter to only selected rows
@@ -7221,7 +7138,7 @@
 
       // Refresh table and chart
       if (currentSessionData && currentSessionData.length > 0) {
-        const filteredRows = applyFuelEffectFilters(currentSessionData);
+        const filteredRows = applySharedFilters(currentSessionData, 'fuel-effect');
         displayFuelEffectGroupsTable(filteredRows);
       }
     }
