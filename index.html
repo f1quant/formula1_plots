@@ -2905,6 +2905,10 @@
         overrides.calculator = calculatorOverrides;
       }
 
+      if (appState.selectedDrivers && appState.selectedDrivers.size > 0) {
+        overrides.selectedDrivers = Array.from(appState.selectedDrivers);
+      }
+
       return {
         v: 1,
         session: {
