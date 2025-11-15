@@ -2354,30 +2354,18 @@
      * Only restores selections that exist in the current data
      */
     function restoreDataDependentSelections(panelName) {
+      let selectionChanged = false;
       switch(panelName) {
         case 'race-trace':
-        case 'lap-time':
-          // Restore driver selections (both use same appState.selectedDrivers Set)
-          // appState.selectedDrivers is already a Set, but if restored from saved state it might be an array
-          const currentDriverSelection = appState.selectedDrivers;
-          const savedDriversArray = Array.isArray(currentDriverSelection) ? currentDriverSelection : Array.from(currentDriverSelection);
-
-          // Clear and rebuild selection with only valid drivers
-          appState.selectedDrivers.clear();
-
+        case 'lap-time': {
+          const savedDriversArray = Array.from(appState.selectedDrivers);
           const availableDrivers = panelName === 'race-trace'
             ? Object.keys(raceTraceDriverLines)
             : Array.from(lapTimeCurrentGroups.keys());
+          const availableSet = new Set(availableDrivers);
+          const nextDrivers = savedDriversArray.filter(driver => availableSet.has(driver));
 
-          // Only select drivers that exist in the current data
-          savedDriversArray.forEach(driver => {
-            if (availableDrivers.includes(driver)) {
-              appState.selectedDrivers.add(driver);
-            }
-          });
-
-          // If no drivers were restored, auto-select top 5
-          if (appState.selectedDrivers.size === 0 && availableDrivers.length > 0) {
+          if (nextDrivers.length === 0 && availableDrivers.length > 0) {
             if (panelName === 'race-trace') {
               const driverFinishInfo = availableDrivers.map(driver => {
                 const data = raceTraceDriverLines[driver];
@@ -2387,15 +2375,18 @@
                 return { driver, maxLapNum, lastPosition };
               });
               const sortedDrivers = sortDriversByFinishingOrder(driverFinishInfo);
-              sortedDrivers.slice(0, 5).forEach(({ driver }) => {
-                appState.selectedDrivers.add(driver);
-              });
+              sortedDrivers.slice(0, 5).forEach(({ driver }) => nextDrivers.push(driver));
             } else {
               const top5 = availableDrivers.slice(0, Math.min(5, availableDrivers.length));
-              top5.forEach(driver => appState.selectedDrivers.add(driver));
+              top5.forEach(driver => nextDrivers.push(driver));
             }
           }
+
+          if (replaceSelectedDrivers(nextDrivers, { silent: true })) {
+            selectionChanged = true;
+          }
           break;
+        }
 
         case 'tyre-deg':
           // Restore stint selections
@@ -2434,6 +2425,10 @@
             }
           });
           break;
+      }
+
+      if ((panelName === 'race-trace' || panelName === 'lap-time') && selectionChanged) {
+        refreshDriverSelectionUI();
       }
     }
 
@@ -2520,8 +2515,6 @@
             restoreDataDependentSelections('race-trace');
           }
 
-          // Update checkboxes to reflect current selection
-          updateRaceTraceDriverCheckboxes();
           renderRaceTraceChart();
           break;
         case 'lap-time':
@@ -3077,13 +3070,63 @@
     const raceTraceDriverList = document.getElementById('raceTraceDriverList');
     const raceTraceDebugInfo = document.getElementById('raceTraceDebugInfo');
 
-    let raceTraceDriverLines = {};
-    let raceTraceChart = null;
-    let raceTraceCurrentSessionRows = [];
-    let raceTraceDriverColors = new Map();
-    let raceTraceYear = '';
-    let raceTraceRound = '';
-    let raceTraceSessionType = '';
+let raceTraceDriverLines = {};
+let raceTraceChart = null;
+let raceTraceCurrentSessionRows = [];
+let raceTraceDriverColors = new Map();
+let raceTraceYear = '';
+let raceTraceRound = '';
+let raceTraceSessionType = '';
+let raceTraceAvailableDrivers = [];
+let lapTimeAvailableDrivers = [];
+
+function setsAreEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
+}
+
+function refreshDriverSelectionUI() {
+  if (Object.keys(raceTraceDriverLines).length > 0) {
+    buildRaceTraceDriverList();
+  }
+  if (lapTimeAvailableDrivers.length > 0) {
+    buildLapTimeDriversList();
+  }
+  if (Object.keys(raceTraceDriverLines).length > 0) {
+    renderRaceTraceChart();
+  }
+  if (lapTimeCurrentGroups.size > 0) {
+    renderLapTimeChart();
+    renderLapTimeSummaryTable();
+  }
+}
+
+function commitSelectedDrivers(nextSet, options = {}) {
+  if (!(nextSet instanceof Set)) {
+    nextSet = new Set(nextSet);
+  }
+  if (setsAreEqual(appState.selectedDrivers, nextSet)) {
+    return false;
+  }
+  appState.selectedDrivers = nextSet;
+  if (!options.silent) {
+    refreshDriverSelectionUI();
+  }
+  return true;
+}
+
+function updateSelectedDrivers(mutator, options = {}) {
+  const next = new Set(appState.selectedDrivers);
+  mutator(next);
+  commitSelectedDrivers(next, options);
+}
+
+function replaceSelectedDrivers(drivers, options = {}) {
+  return commitSelectedDrivers(new Set(drivers), options);
+}
     let raceTraceLapBounds = { min: 1, max: 1 };
 
     const DEFAULT_SC_PROB_RANGES = [
@@ -3502,6 +3545,7 @@
       });
 
       const sortedDriverFinishInfo = sortDriversByFinishingOrder(driverFinishInfo);
+      raceTraceAvailableDrivers = sortedDriverFinishInfo.map(({ driver }) => driver);
 
       // Add "Select All" checkbox at the top
       const selectAllDiv = document.createElement('div');
@@ -3542,28 +3586,16 @@
 
       // Select/deselect all drivers
       selectAllCheckbox.addEventListener('change', (e) => {
-        const driverCheckboxes = raceTraceDriverList.querySelectorAll('input[type="checkbox"]:not(#raceTraceSelectAllDrivers)');
         const shouldCheck = e.target.checked;
-
-        driverCheckboxes.forEach(cb => {
-          cb.checked = shouldCheck;
-          const driverId = cb.id.replace('race-trace-driver-', '');
-          if (shouldCheck) {
-            appState.selectedDrivers.add(driverId);
-          } else {
-            appState.selectedDrivers.delete(driverId);
-          }
+        updateSelectedDrivers((set) => {
+          raceTraceAvailableDrivers.forEach(driverId => {
+            if (shouldCheck) {
+              set.add(driverId);
+            } else {
+              set.delete(driverId);
+            }
+          });
         });
-
-        // Save driver selections to state
-        renderRaceTraceChart();
-        // Also update lap time chart if it has data
-        if (lapTimeCurrentGroups.size > 0) {
-          renderLapTimeChart();
-          renderLapTimeSummaryTable();
-        }
-
-        updateSelectAllState();
       });
 
       sortedDriverFinishInfo.forEach(({ driver }) => {
@@ -3579,21 +3611,14 @@
         checkbox.style.accentColor = info.color;
 
         checkbox.addEventListener('change', (e) => {
-          if (e.target.checked) {
-            appState.selectedDrivers.add(driver);
-          } else {
-            appState.selectedDrivers.delete(driver);
-          }
-          // Save driver selections to state (both race trace and lap time use same set)
-          renderRaceTraceChart();
-          // Also update lap time chart if it has data
-          if (lapTimeCurrentGroups.size > 0) {
-            renderLapTimeChart();
-            renderLapTimeSummaryTable();
-          }
-
-          // Update select all checkbox state
-          updateSelectAllState();
+          const isChecked = e.target.checked;
+          updateSelectedDrivers((set) => {
+            if (isChecked) {
+              set.add(driver);
+            } else {
+              set.delete(driver);
+            }
+          });
         });
 
         const label = document.createElement('label');
@@ -3611,33 +3636,6 @@
 
       // Set initial state of select all checkbox
       updateSelectAllState();
-    }
-
-    function updateRaceTraceDriverCheckboxes() {
-      Object.keys(raceTraceDriverLines).forEach(driver => {
-        const checkbox = document.getElementById(`race-trace-driver-${driver}`);
-        if (checkbox) {
-          checkbox.checked = appState.selectedDrivers.has(driver);
-        }
-      });
-
-      // Update select all checkbox state
-      const selectAllCheckbox = document.getElementById('raceTraceSelectAllDrivers');
-      if (selectAllCheckbox) {
-        const driverCheckboxes = raceTraceDriverList.querySelectorAll('input[type="checkbox"]:not(#raceTraceSelectAllDrivers)');
-        const checkedCount = Array.from(driverCheckboxes).filter(cb => cb.checked).length;
-
-        if (checkedCount === 0) {
-          selectAllCheckbox.checked = false;
-          selectAllCheckbox.indeterminate = false;
-        } else if (checkedCount === driverCheckboxes.length) {
-          selectAllCheckbox.checked = true;
-          selectAllCheckbox.indeterminate = false;
-        } else {
-          selectAllCheckbox.checked = false;
-          selectAllCheckbox.indeterminate = true;
-        }
-      }
     }
 
     // Shared detection functions that work with any session rows
@@ -4550,10 +4548,14 @@
       renderLapTimeSummaryTable();
     }
 
-    function buildLapTimeDriversList(drivers) {
+    function buildLapTimeDriversList(drivers = null) {
+      if (Array.isArray(drivers)) {
+        lapTimeAvailableDrivers = drivers.slice();
+      }
+      const activeDrivers = Array.isArray(drivers) ? drivers : lapTimeAvailableDrivers;
       lapTimeDriversList.innerHTML = '';
 
-      if (drivers.length === 0) return;
+      if (!activeDrivers || activeDrivers.length === 0) return;
 
       // Add "Select All" checkbox at the top
       const selectAllWrapper = document.createElement('label');
@@ -4594,30 +4596,19 @@
 
       // Select/deselect all drivers
       selectAllCheckbox.addEventListener('change', (e) => {
-        const driverCheckboxes = lapTimeDriversList.querySelectorAll('input[type="checkbox"]:not(#lapTimeSelectAllDrivers)');
         const shouldCheck = e.target.checked;
-
-        driverCheckboxes.forEach(cb => {
-          cb.checked = shouldCheck;
-          if (shouldCheck) {
-            appState.selectedDrivers.add(cb.value);
-          } else {
-            appState.selectedDrivers.delete(cb.value);
-          }
+        updateSelectedDrivers((set) => {
+          activeDrivers.forEach(driver => {
+            if (shouldCheck) {
+              set.add(driver);
+            } else {
+              set.delete(driver);
+            }
+          });
         });
-
-        // Save driver selections to state
-        renderLapTimeChart();
-        renderLapTimeSummaryTable();
-        // Also update race trace chart if it has data
-        if (Object.keys(raceTraceDriverLines).length > 0) {
-          renderRaceTraceChart();
-        }
-
-        updateSelectAllState();
       });
 
-      drivers.forEach(driver => {
+      activeDrivers.forEach(driver => {
         const wrapper = document.createElement('label');
         wrapper.className = 'lap-time-driver-item';
 
@@ -4630,21 +4621,14 @@
         checkbox.style.accentColor = info.color;
 
         checkbox.addEventListener('change', (e) => {
-          if (e.target.checked) {
-            appState.selectedDrivers.add(driver);
-          } else {
-            appState.selectedDrivers.delete(driver);
-          }
-          // Save driver selections to state (both race trace and lap time use same set)
-          renderLapTimeChart();
-          renderLapTimeSummaryTable();
-          // Also update race trace chart if it has data
-          if (Object.keys(raceTraceDriverLines).length > 0) {
-            renderRaceTraceChart();
-          }
-
-          // Update select all checkbox state
-          updateSelectAllState();
+          const isChecked = e.target.checked;
+          updateSelectedDrivers((set) => {
+            if (isChecked) {
+              set.add(driver);
+            } else {
+              set.delete(driver);
+            }
+          });
         });
 
         const label = document.createElement('label');
