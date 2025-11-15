@@ -6398,15 +6398,15 @@ function updateSelectedDrivers(mutator, options = {}) {
       // Create series for scatter plot and build mapping
       const series = [];
       scatterStintToPoint.clear();
-      let seriesIndex = 0;
 
       datasets.forEach((points, compound) => {
         const color = getF1TireColor(compound);
 
+        const scatterSeriesIndex = series.length;
         // Store stint key to point mapping
         points.forEach((p, dataIndex) => {
           if (p.stintKey) {
-            scatterStintToPoint.set(p.stintKey, { seriesIndex, dataIndex });
+            scatterStintToPoint.set(p.stintKey, { seriesIndex: scatterSeriesIndex, dataIndex });
           }
         });
 
@@ -6434,8 +6434,6 @@ function updateSelectedDrivers(mutator, options = {}) {
             itemStyle: { opacity: 0.15 }
           }
         });
-
-        seriesIndex++;
 
         // Calculate best fit line for this compound
         if (points.length >= 2) {
