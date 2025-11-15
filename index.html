@@ -1351,6 +1351,40 @@
       min-height: 1em;
     }
 
+    .track-temp-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+    }
+
+    .track-temp-header h2 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+
+    .track-temp-note {
+      font-size: 0.85rem;
+      color: var(--muted-color);
+    }
+
+    .track-temp-chart {
+      width: 100%;
+      height: 420px;
+      border-radius: 10px;
+      background: rgba(5, 7, 10, 0.8);
+      border: 1px solid var(--border-color);
+    }
+
+    .track-temp-message {
+      font-size: 0.9rem;
+      color: var(--muted-color);
+      min-height: 1em;
+    }
+
     @media (max-width: 1200px) {
       .calculator-layout {
         flex-direction: column;
@@ -1535,6 +1569,7 @@
       <button class="tab-button" data-tab="lap-time" data-tooltip="Shows fuel- and tyre-corrected lap times for each driver by compound. See table at the bottom. If the parameters are set correctly the lap times in the plot should not trend faster or slower. Use 'Copy Averages To Calculator' to apply the to other pages.">Lap Time</button>
       <button class="tab-button" data-tab="pit-loss" data-tooltip="Displays pit loss estimates by comparing pit laps to the surrounding reference laps.">Pit Loss</button>
       <button class="tab-button" data-tab="calculator" data-tooltip="Calculates the optimal free-air tyre strategy and compares it to other strategies">Calculator</button>
+      <button class="tab-button" data-tab="track-temp" data-tooltip="Plots the mean track temperature vs lap">Track Temp</button>
       <span class="status-message" id="statusMessage">Loading...</span>
       <button id="reloadDataBtn" type="button" title="Reload data from server">Reload Data</button>
       <button id="spoilerModeBtn" type="button" title="Adjust spoiler settings">Spoiler</button>
@@ -2040,6 +2075,18 @@
             <div id="calculatorLapTimeChart" class="calculator-chart" style="height:260px; margin-top:4px;"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Track Temp Panel -->
+    <div id="track-temp-panel" class="content-panel">
+      <div class="track-temp-panel">
+        <div class="track-temp-header">
+          <h2>Track Temperature</h2>
+          <div class="track-temp-note">Plotted from the mean `weather_TrackTemp` value per lap.</div>
+        </div>
+        <div id="trackTempChart" class="track-temp-chart"></div>
+        <div id="trackTempMessage" class="track-temp-message"></div>
       </div>
     </div>
 
@@ -3321,6 +3368,9 @@
           break;
         case 'pit-loss':
           processPitLossData(sessionData);
+          break;
+        case 'track-temp':
+          initializeTrackTempPanel(sessionData);
           break;
         case 'calculator':
           // Initialize calculator panel
@@ -8314,6 +8364,7 @@ function updateSelectedDrivers(mutator, options = {}) {
     const INF = 1e18;
     let calculatorStrategyChart = null;
     let calculatorLapTimeChart = null;
+    let trackTempChart = null;
     // DP Core: Tyre Rules
     class TwoCompoundTyreRule {
       constructor(compoundIndices) {
@@ -9091,8 +9142,106 @@ function updateSelectedDrivers(mutator, options = {}) {
       if (!isRestoringPermalink || appState.calculator.numLaps === null || appState.calculator.numLaps === undefined) {
         saveToState('calculator.numLaps', defaultNumLaps);
       }
-
+    
       configureCalculatorPanelFromCircuit(circuitName, { isRestoringPermalink });
+    }
+
+    function computeTrackTempAverages(sessionData) {
+      const lapMap = new Map();
+      sessionData.forEach(row => {
+        const lap = parseInt(row.lap_LapNumber, 10);
+        if (!Number.isFinite(lap)) return;
+        const temp = parseFloat(row.weather_TrackTemp);
+        if (!Number.isFinite(temp)) return;
+        const entry = lapMap.get(lap) || { sum: 0, count: 0 };
+        entry.sum += temp;
+        entry.count += 1;
+        lapMap.set(lap, entry);
+      });
+      if (lapMap.size === 0) return [];
+      return Array.from(lapMap.keys())
+        .sort((a, b) => a - b)
+        .map(lap => {
+          const { sum, count } = lapMap.get(lap);
+          return { lap, temp: sum / count };
+        });
+    }
+
+    function renderTrackTempChartFromData(points) {
+      const chartDom = document.getElementById('trackTempChart');
+      const messageEl = document.getElementById('trackTempMessage');
+      if (!chartDom) return;
+      if (!trackTempChart) {
+        trackTempChart = echarts.init(chartDom);
+      }
+      if (!points || points.length === 0) {
+        trackTempChart.clear();
+        trackTempChart.setOption({
+          backgroundColor: 'transparent',
+          title: {
+            text: 'No track temperature data',
+            left: 'center',
+            textStyle: { color: '#f8fafc', fontSize: 14 }
+          }
+        });
+        if (messageEl) {
+          messageEl.textContent = 'No `weather_TrackTemp` data is available for this session.';
+        }
+        return;
+      }
+      if (messageEl) {
+        messageEl.textContent = '';
+      }
+      const laps = points.map(point => point.lap);
+      const temps = points.map(point => +point.temp.toFixed(2));
+      const option = {
+        backgroundColor: 'transparent',
+        textStyle: { color: '#e2e8f0' },
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const entry = params[0];
+            if (!entry) return '';
+            return `Lap ${entry.axisValue}<br/>${entry.data.toFixed(2)}°C`;
+          }
+        },
+        grid: { left: 60, right: 20, top: 40, bottom: 60 },
+        xAxis: {
+          type: 'category',
+          name: 'Lap',
+          data: laps,
+          axisLine: { lineStyle: { color: '#94a3b8' } },
+          axisLabel: { color: '#cbd5f5' }
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Track Temp (°C)',
+          axisLine: { lineStyle: { color: '#94a3b8' } },
+          axisLabel: { color: '#cbd5f5' },
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.3)' } }
+        },
+        series: [
+          {
+            type: 'line',
+            data: temps,
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { width: 3, color: '#00b4ff' },
+            areaStyle: { color: 'rgba(0, 180, 255, 0.2)' }
+          }
+        ]
+      };
+      trackTempChart.setOption(option, true);
+    }
+
+    function initializeTrackTempPanel(sessionData) {
+      if (!sessionData || sessionData.length === 0) {
+        renderTrackTempChartFromData([]);
+        return;
+      }
+      const points = computeTrackTempAverages(sessionData);
+      renderTrackTempChartFromData(points);
     }
 
     // Set up calculator event listeners
@@ -9216,6 +9365,9 @@ function updateSelectedDrivers(mutator, options = {}) {
       }
       if (calculatorLapTimeChart) {
         calculatorLapTimeChart.resize();
+      }
+      if (trackTempChart) {
+        trackTempChart.resize();
       }
     });
 
