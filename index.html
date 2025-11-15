@@ -2418,13 +2418,16 @@
     }
 
     function getSpoilerPreferenceValues() {
-      const season = appState.session.season || spoilerConfig.lastSeason || '';
-      const gpPref = appState.session.gp || (spoilerConfig.lastRound && spoilerConfig.lastMeetingName ? `${spoilerConfig.lastRound}||${spoilerConfig.lastMeetingName}` : '');
-      const sessionType = appState.session.sessionType || spoilerConfig.lastSessionType || '';
+      const season = spoilerConfig.lastSeason || '';
+      const gpPref =
+        spoilerConfig.lastRound && spoilerConfig.lastMeetingName
+          ? `${spoilerConfig.lastRound}||${spoilerConfig.lastMeetingName}`
+          : '';
+      const sessionType = spoilerConfig.lastSessionType || '';
       return {
-        season: season || '',
-        gp: gpPref || '',
-        sessionType: sessionType || ''
+        season,
+        gp: gpPref,
+        sessionType
       };
     }
 
