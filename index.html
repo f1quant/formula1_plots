@@ -1336,35 +1336,8 @@
             </div>
           </div>
 
-          <!-- Include Filters -->
-          <div class="filter-panel" style="margin-bottom: 16px;">
-            <div class="filters-title">Include</div>
-            <div class="exclude-checkboxes">
-              <div class="checkbox-group">
-                <input type="checkbox" id="filterIncludeLapped" checked>
-                <label for="filterIncludeLapped">Lapped</label>
-              </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="filterIncludeRetired" checked>
-                <label for="filterIncludeRetired">Retired</label>
-              </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="filterRainfall">
-                <label for="filterRainfall">Rainfall</label>
-              </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="filterSafetyCar">
-                <label for="filterSafetyCar">Safety Car</label>
-              </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="filterPitLaps">
-                <label for="filterPitLaps">Pit Laps</label>
-              </div>
-            </div>
-          </div>
-
           <!-- Analysis Parameters -->
-          <div class="filter-panel">
+          <div class="filter-panel" style="margin-bottom: 16px;">
             <div class="filters-title">Analysis Parameters</div>
             <div class="filters-grid" style="grid-template-columns: 1fr;">
               <div class="filter-item vertical">
@@ -1394,6 +1367,33 @@
                   <input type="range" id="degHard" min="0" max="0.3" step="0.001" value="0.05">
                   <div class="slider-value" id="degHardValue">0.050</div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Include Filters -->
+          <div class="filter-panel">
+            <div class="filters-title">Include</div>
+            <div class="exclude-checkboxes">
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterIncludeLapped" checked>
+                <label for="filterIncludeLapped">Lapped</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterIncludeRetired" checked>
+                <label for="filterIncludeRetired">Retired</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterRainfall">
+                <label for="filterRainfall">Rainfall</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterSafetyCar">
+                <label for="filterSafetyCar">Safety Car</label>
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="filterPitLaps">
+                <label for="filterPitLaps">Pit Laps</label>
               </div>
             </div>
           </div>
@@ -1451,6 +1451,28 @@
             </div>
           </div>
 
+          <!-- Analysis Parameters -->
+          <div class="filter-panel" style="margin-bottom: 16px;">
+            <div class="filters-title">Analysis Parameters</div>
+            <div class="filters-grid" style="grid-template-columns: 1fr;">
+              <div class="filter-item vertical">
+                <div class="filter-label">Fuel Effect (s/lap)</div>
+                <div class="slider-container">
+                  <input type="range" id="tyreDegFuelEffectSlider" min="0" max="0.1" step="0.001" value="0.025">
+                  <div class="slider-value" id="tyreDegFuelEffectValue">0.025</div>
+                </div>
+              </div>
+              <div class="filter-item">
+                <div class="filter-label">Min Rows Per Stint</div>
+                <input type="number" id="tyreDegFilterMinRows" value="5" min="1">
+              </div>
+              <div class="filter-item">
+                <div class="filter-label">Min Correlation</div>
+                <input type="number" id="tyreDegFilterMinCorr" value="-1.0" min="-1" max="1" step="0.1">
+              </div>
+            </div>
+          </div>
+
           <!-- Include Filters -->
           <div class="filter-panel" style="margin-bottom: 16px;">
             <div class="filters-title">Include</div>
@@ -1478,66 +1500,48 @@
             </div>
           </div>
 
-          <!-- Analysis Parameters -->
-          <div class="filter-panel" style="margin-bottom: 16px;">
-            <div class="filters-title">Analysis Parameters</div>
-            <div class="filters-grid" style="grid-template-columns: 1fr;">
-              <div class="filter-item vertical">
-                <div class="filter-label">Fuel Effect (s/lap)</div>
-                <div class="slider-container">
-                  <input type="range" id="tyreDegFuelEffectSlider" min="0" max="0.1" step="0.001" value="0.025">
-                  <div class="slider-value" id="tyreDegFuelEffectValue">0.025</div>
-                </div>
-              </div>
-              <div class="filter-item">
-                <div class="filter-label">Min Rows Per Stint</div>
-                <input type="number" id="tyreDegFilterMinRows" value="5" min="1">
-              </div>
-              <div class="filter-item">
-                <div class="filter-label">Min Correlation</div>
-                <input type="number" id="tyreDegFilterMinCorr" value="-1.0" min="-1" max="1" step="0.1">
-              </div>
-            </div>
-          </div>
-
           <!-- Tyre Choices -->
           <div id="tyreDegTyreChoicesDisplay" class="tyre-choices-display" style="display: none; margin-bottom: 16px;">
             <div class="tyre-choices-label">Tyre Choices:</div>
             <div id="tyreDegTyreChoicesText"></div>
           </div>
-
-          <!-- Average Deg Display -->
-          <div id="tyreDegAvgDegDisplay" class="filter-panel" style="display: none;">
-            <div class="filters-title">Average Deg</div>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <div id="tyreDegAvgDegText" style="font-size: 12px;"></div>
-              <button id="tyreDegCopyAvgDegButton" style="display: none; padding: 6px 12px; font-size: 11px; background: var(--accent-color); color: var(--bg-color); border: none; border-radius: 4px; cursor: pointer; font-weight: 600; align-self: flex-start;">Select</button>
-            </div>
-          </div>
         </div>
 
         <!-- RIGHT: Charts and Analysis -->
         <div style="flex: 1;">
-          <!-- Lap Time Chart -->
-          <div id="tyreDegChartsWrapper" style="display: none; margin-bottom: 16px;">
-            <div class="tyre-deg-chart-container">
-              <div class="chart-title">Lap Time vs Tyre Age</div>
-              <div class="tyre-deg-chart-controls">
-                <button id="tyreDegFuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
-                <span style="font-size: 10px; color: var(--muted-color);" id="tyreDegSelectedStintCount">No stints selected</span>
+          <!-- Charts Side by Side -->
+          <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+            <!-- Lap Time Chart -->
+            <div id="tyreDegChartsWrapper" style="display: none; flex: 1;">
+              <div class="tyre-deg-chart-container">
+                <div class="chart-title">Lap Time vs Tyre Age</div>
+                <div class="tyre-deg-chart-controls">
+                  <button id="tyreDegFuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
+                  <span style="font-size: 10px; color: var(--muted-color);" id="tyreDegSelectedStintCount">No stints selected</span>
+                </div>
+                <div id="tyreDegLapTimeChart" style="height: 400px;"></div>
               </div>
-              <div id="tyreDegLapTimeChart"></div>
-            </div>
-          </div>
 
-          <!-- Scatter Chart -->
-          <div id="tyreDegScatterChartWrapper" style="display: none; margin-bottom: 16px;">
-            <div class="tyre-deg-chart-container">
-              <div class="chart-title">Tyre Degradation Analysis: Deg vs Pace</div>
-              <div id="tyreDegScatterChart"></div>
-              <div id="tyreDegEquationsSection" class="equations-section" style="display: none;">
-                <div class="equations-title">Best Fit Equations (Deg = m × Pace + b)</div>
-                <div id="tyreDegEquationsGrid" class="equations-grid"></div>
+              <!-- Average Deg Display -->
+              <div id="tyreDegAvgDegDisplay" class="equations-section" style="display: none;">
+                <div class="equations-title">Average Deg</div>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  <div id="tyreDegAvgDegText" class="equations-grid" style="flex: 1;"></div>
+                  <button id="tyreDegCopyAvgDegButton" style="display: none; padding: 12px 16px; font-size: 11px; background: var(--accent-color); color: var(--bg-color); border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Select</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Scatter Chart -->
+            <div id="tyreDegScatterChartWrapper" style="display: none; flex: 1;">
+              <div class="tyre-deg-chart-container">
+                <div class="chart-title">Tyre Degradation Analysis: Deg vs Pace</div>
+                <div style="height: 32px;"></div>
+                <div id="tyreDegScatterChart" style="height: 400px;"></div>
+                <div id="tyreDegEquationsSection" class="equations-section" style="display: none;">
+                  <div class="equations-title">Best Fit Equations (Deg = m × Pace + b)</div>
+                  <div id="tyreDegEquationsGrid" class="equations-grid"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1552,7 +1556,7 @@
     <div id="fuel-effect-panel" class="content-panel">
       <div style="display: flex; gap: 16px; margin-bottom: 16px;">
         <!-- LEFT: Filters -->
-        <div style="flex: 0 0 275px;">
+        <div style="flex: 0 0 320px;">
           <!-- Lap Filters -->
           <div class="filter-panel" style="margin-bottom: 16px;">
             <div class="filters-title">Lap Filters</div>
@@ -6056,15 +6060,19 @@
       // Calculate and display average deg for each compound
       const avgDegValues = new Map(); // Store for copy button
       if (compoundDegValues.size > 0) {
-        const avgDegParts = [];
+        tyreDegAvgDegText.innerHTML = '';
         compoundDegValues.forEach((degValues, compound) => {
           const avgDeg = degValues.reduce((sum, val) => sum + val, 0) / degValues.length;
           avgDegValues.set(compound, avgDeg);
           const color = getF1TireColor(compound);
-          avgDegParts.push(`<span style="color: ${color}; font-weight: 600;">${compound}: ${avgDeg.toFixed(4)}s/lap</span>`);
+
+          const degItem = document.createElement('div');
+          degItem.className = 'equation-item';
+          degItem.style.borderLeftColor = color;
+          degItem.textContent = `${compound}: ${avgDeg.toFixed(4)} s/lap`;
+          tyreDegAvgDegText.appendChild(degItem);
         });
-        tyreDegAvgDegText.innerHTML = avgDegParts.join(' &nbsp;&nbsp;|&nbsp;&nbsp; ');
-        tyreDegAvgDegDisplay.style.display = 'flex';
+        tyreDegAvgDegDisplay.style.display = 'block';
 
         // Set up copy button
         const copyButton = document.getElementById('tyreDegCopyAvgDegButton');
