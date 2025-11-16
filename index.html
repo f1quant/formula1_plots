@@ -9145,15 +9145,20 @@ function updateSelectedDrivers(mutator, options = {}) {
       configureCalculatorPanelFromCircuit(circuitName, { isRestoringPermalink });
     }
 
-    function isRaceSession(row) {
-      const sessionType = String(row.session_type || '').trim().toUpperCase();
-      return sessionType === 'R';
+    function normalizeSessionType(value) {
+      const normalized = String(value || '').trim().toUpperCase();
+      return normalized;
     }
 
-    function buildLapAveragePoints(rows) {
+    function matchesSessionType(rowSessionType, targetSessionType) {
+      if (!targetSessionType) return true;
+      return normalizeSessionType(rowSessionType) === targetSessionType;
+    }
+
+    function buildLapAveragePoints(rows, targetSessionType) {
       const lapMap = new Map();
       rows.forEach(row => {
-        if (!isRaceSession(row)) return;
+        if (!matchesSessionType(row.session_type, targetSessionType)) return;
         const lap = parseInt(row.lap_LapNumber, 10);
         if (!Number.isFinite(lap)) return;
         const temp = parseFloat(row.weather_TrackTemp);
@@ -9172,11 +9177,10 @@ function updateSelectedDrivers(mutator, options = {}) {
         });
     }
 
-    function collectCircuitEventSeries(circuitName, excludeEventKey, limit = 4) {
+    function collectCircuitEventSeries(circuitName, excludeEventKey, limit = 4, targetSessionType = '') {
       if (!circuitName || !allRowsRaw || allRowsRaw.length === 0) return [];
       const eventMap = new Map();
       allRowsRaw.forEach(row => {
-        if (!isRaceSession(row)) return;
         const circuit = String(row.circuit_name || "").trim();
         if (!circuit || circuit !== circuitName) return;
         const year = String(row.year || "").trim();
@@ -9188,7 +9192,9 @@ function updateSelectedDrivers(mutator, options = {}) {
         if (!eventMap.has(eventKey)) {
           eventMap.set(eventKey, { year, round, meeting, rows: [] });
         }
-        eventMap.get(eventKey).rows.push(row);
+        if (matchesSessionType(row.session_type, targetSessionType)) {
+          eventMap.get(eventKey).rows.push(row);
+        }
       });
 
       const sortedEvents = Array.from(eventMap.values()).sort((a, b) => {
@@ -9325,8 +9331,8 @@ function updateSelectedDrivers(mutator, options = {}) {
       const currentEventKey = `${currentYear}||${currentRound}||${currentMeeting}`;
 
       const seriesList = [];
-      const raceRows = sessionData.filter(isRaceSession);
-      const currentPoints = buildLapAveragePoints(raceRows);
+      const targetSessionType = normalizeSessionType(appState.session.sessionType || sessionData[0]?.session_type);
+      const currentPoints = buildLapAveragePoints(sessionData, targetSessionType);
       if (currentPoints.length) {
       seriesList.push({
         label: 'Current session',
@@ -9336,7 +9342,7 @@ function updateSelectedDrivers(mutator, options = {}) {
       });
       }
 
-      const historySeries = collectCircuitEventSeries(circuitName, currentEventKey, 4);
+      const historySeries = collectCircuitEventSeries(circuitName, currentEventKey, 4, targetSessionType);
       seriesList.push(...historySeries);
 
       renderTrackTempChartFromSeries(seriesList);
