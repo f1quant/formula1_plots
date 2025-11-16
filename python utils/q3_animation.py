@@ -3,9 +3,9 @@ import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.widgets import Button
 import fastf1
 from fastf1 import plotting as f1plot
-import numpy as np
 import scipy.optimize
 import my_f1_utils # cache
 
@@ -67,7 +67,7 @@ def calc_time_delta(ts, x1, y1, x2, y2):
     return np.array(ans)
 
 
-def make_plot(laps, labels, colors, title, fps = 60, dpi = 200, ff = 2):
+def make_plot(laps, labels, colors, title, fps = 60, dpi = 200):
     t_max = 0.0
     for lap in laps:
         t_max = max(t_max, lap["LapTime"].total_seconds())
@@ -109,7 +109,7 @@ def make_plot(laps, labels, colors, title, fps = 60, dpi = 200, ff = 2):
     base_r = max(track_xs.max() - track_xs.min(), track_ys.max() - track_ys.min()) * 0.55
 
     # Zoom state
-    zoom_state = {'level': 0.2}
+    zoom_state = {'level': 0.8}
 
     ax.set_xlim(mx - base_r, mx + base_r)
     ax.set_ylim(my - base_r, my + base_r)
@@ -118,6 +118,7 @@ def make_plot(laps, labels, colors, title, fps = 60, dpi = 200, ff = 2):
 
     ax.set_title(title, fontsize=8, pad=10)
     clock_txt = ax.text(0.02, 0.98, "", transform=ax.transAxes, va="top", ha="left", fontsize=8)
+    speed_txt = ax.text(0.02, 0.92, "", transform=ax.transAxes, va="top", ha="left", fontsize=6)
     zoom_txt = ax.text(0.98, 0.98, "Zoom: 100% [+/-]", transform=ax.transAxes, va="top", ha="right", fontsize=6)
     zoom_txt.set_text(f"Zoom: {100/zoom_state['level']:.0f}% [+/-]")
 
@@ -127,47 +128,62 @@ def make_plot(laps, labels, colors, title, fps = 60, dpi = 200, ff = 2):
     ax_td.set_title(f"Gap")
     ax_td.xaxis.set_ticklabels([])
     ax_td.set_xlim(0, T[-1])
-    ax_td.set_ylim(-0.5, 2) # 0s to 2s
+    ax_td.set_ylim(-0.5, 2)  # 0s to 2s
     ax_td.grid(True, alpha=0.3)
     ax_td.axhline(0, lw=1, alpha=0.6)
 
-    def update_viewport(i):
+    playback_state = {"frame_idx": 0.0, "speed": 1.0, "playing": True}
+    max_speed = 10.0
+    speed_step = 1.0
+
+    fig.subplots_adjust(bottom=0.18)
+
+    button_height = 0.05
+    button_width = 0.12
+    button_gap = 0.02
+    button_y = 0.03
+    button_x = 0.1
+    play_ax = fig.add_axes([button_x, button_y, button_width, button_height])
+    pause_ax = fig.add_axes([button_x + button_width + button_gap, button_y, button_width, button_height])
+    faster_ax = fig.add_axes([button_x + 2 * (button_width + button_gap), button_y, button_width, button_height])
+    slower_ax = fig.add_axes([button_x + 3 * (button_width + button_gap), button_y, button_width, button_height])
+
+    play_btn = Button(play_ax, "Play")
+    pause_btn = Button(pause_ax, "Pause")
+    faster_btn = Button(faster_ax, "Faster")
+    slower_btn = Button(slower_ax, "Slower")
+
+    def update_zoom_text():
+        zoom_txt.set_text(f"Zoom: {100/zoom_state['level']:.0f}% [+/-]")
+        fig.canvas.draw_idle()
+
+    def update_viewport(frame_idx):
         """Update viewport to keep drivers in frame, prioritizing front runner"""
-        # Get current positions
-        current_xs = [all_xs[di][i*ff] for di in range(len(labels))]
-        current_ys = [all_ys[di][i*ff] for di in range(len(labels))]
+        current_xs = [all_xs[di][frame_idx] for di in range(len(labels))]
+        current_ys = [all_ys[di][frame_idx] for di in range(len(labels))]
 
-        # Front runner (driver 0) must always be in frame
         front_x, front_y = current_xs[0], current_ys[0]
-
-        # Calculate bounding box that includes all drivers
         min_x, max_x = min(current_xs), max(current_xs)
         min_y, max_y = min(current_ys), max(current_ys)
 
-        # Add padding
         padding = 50  # meters
         min_x -= padding
         max_x += padding
         min_y -= padding
         max_y += padding
 
-        # Calculate required radius to fit all drivers
         all_cx = (min_x + max_x) / 2
         all_cy = (min_y + max_y) / 2
         all_r = max(max_x - min_x, max_y - min_y) / 2
 
-        # Calculate view with zoom applied
         target_r = base_r * zoom_state['level']
 
-        # If zoomed in enough that not all drivers fit, prioritize front runner
         if all_r > target_r:
-            # Center on front runner
             cx, cy = front_x, front_y
             r = target_r
         else:
-            # Can fit all drivers, center on the group
             cx, cy = all_cx, all_cy
-            r = max(all_r, target_r * 0.5)  # Don't zoom in too much automatically
+            r = max(all_r, target_r * 0.5)
 
         ax.set_xlim(cx - r, cx + r)
         ax.set_ylim(cy - r, cy + r)
@@ -175,41 +191,68 @@ def make_plot(laps, labels, colors, title, fps = 60, dpi = 200, ff = 2):
     def on_key(event):
         """Handle zoom controls"""
         if event.key == '+' or event.key == '=':
-            zoom_state['level'] *= 0.8  # Zoom in
-            zoom_state['level'] = max(0.025, zoom_state['level'])  # Minimum zoom
+            zoom_state['level'] *= 0.8
+            zoom_state['level'] = max(0.025, zoom_state['level'])
         elif event.key == '-' or event.key == '_':
-            zoom_state['level'] *= 1.25  # Zoom out
-            zoom_state['level'] = min(5.0, zoom_state['level'])  # Maximum zoom
-        zoom_state['level'] = 1.0/round(1.0/zoom_state['level'], 1) # round it
-
-        zoom_txt.set_text(f"Zoom: {100/zoom_state['level']:.0f}% [+/-]")
-        fig.canvas.draw_idle()
+            zoom_state['level'] *= 1.25
+            zoom_state['level'] = min(5.0, zoom_state['level'])
+        zoom_state['level'] = 1.0 / round(1.0 / zoom_state['level'], 1)
+        update_zoom_text()
 
     fig.canvas.mpl_connect('key_press_event', on_key)
 
+    def set_play(_):
+        playback_state["playing"] = True
+
+    def set_pause(_):
+        playback_state["playing"] = False
+
+    def speed_up(_):
+        playback_state["speed"] = min(max_speed, playback_state["speed"] + speed_step)
+        speed_txt.set_text(f"Speed: {playback_state['speed']:+.1f}x")
+        fig.canvas.draw_idle()
+
+    def slow_down(_):
+        playback_state["speed"] = max(-max_speed, playback_state["speed"] - speed_step)
+        speed_txt.set_text(f"Speed: {playback_state['speed']:+.1f}x")
+        fig.canvas.draw_idle()
+
+    play_btn.on_clicked(set_play)
+    pause_btn.on_clicked(set_pause)
+    faster_btn.on_clicked(speed_up)
+    slower_btn.on_clicked(slow_down)
+
     def init():
+        playback_state["frame_idx"] = 0.0
+        playback_state["playing"] = True
         for dot in dots:
             dot.set_data([], [])
         for ln in delta_lines:
             ln.set_data([], [])
         clock_txt.set_text("")
-        return (*dots, *delta_lines, clock_txt, zoom_txt)
+        speed_txt.set_text(f"Speed: {playback_state['speed']:+.1f}x")
+        return (*dots, *delta_lines, clock_txt, speed_txt, zoom_txt)
 
-    def update(i):
+    def update(_):
+        playback_state["frame_idx"] = max(0.0, min(n_frames - 1, playback_state["frame_idx"]))
+        frame_idx = int(round(playback_state["frame_idx"]))
+
         for di, dot in enumerate(dots):
-            dot.set_data([all_xs[di][i*ff]], [all_ys[di][i*ff]])
+            dot.set_data([all_xs[di][frame_idx]], [all_ys[di][frame_idx]])
         for di, ln in enumerate(delta_lines):
-            ln.set_data(T[:i*ff+1], time_deltas[di][:i*ff+1])
+            ln.set_data(T[:frame_idx+1], time_deltas[di][:frame_idx+1])
 
-        clock_txt.set_text(f"t = {T[i*ff]:.2f} s")
+        clock_txt.set_text(f"t = {T[frame_idx]:.2f} s")
+        speed_txt.set_text(f"Speed: {playback_state['speed']:+.1f}x")
+        update_viewport(frame_idx)
 
-        # Update viewport based on current positions and zoom level
-        update_viewport(i)
+        if playback_state["playing"]:
+            playback_state["frame_idx"] += playback_state["speed"]
+        playback_state["frame_idx"] = max(0.0, min(n_frames - 1, playback_state["frame_idx"]))
 
-        return (*dots, *delta_lines, clock_txt, zoom_txt)
+        return (*dots, *delta_lines, clock_txt, speed_txt, zoom_txt)
 
-    anim = FuncAnimation(fig, update, init_func=init, frames=n_frames//ff, repeat=False, interval=1000/fps, blit=False)
-    plt.tight_layout()
+    anim = FuncAnimation(fig, update, init_func=init, interval=1000/fps, repeat=True, blit=False)
     plt.show()
     plt.close(fig)
 
@@ -224,8 +267,7 @@ def animate_q3_fastest_laps(year, grand_prix, drivers):
     for driver in drivers:
         driver_laps.append(laps.pick_drivers(driver).pick_fastest())
         color = fastf1.plotting.get_driver_style(identifier=driver, style=['color'], session=session)["color"]
-        if driver == "PIA": color = "black"
         colors.append(color)
-    make_plot(driver_laps, drivers, colors, title, ff=1)
+    make_plot(driver_laps, drivers, colors, title)
 
-animate_q3_fastest_laps(2025, 21, ["NOR","PIA"])
+animate_q3_fastest_laps(2024, 22, ["RUS","NOR"])
