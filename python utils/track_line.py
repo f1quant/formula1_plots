@@ -462,7 +462,7 @@ def main():
         dists, idxes = tree.query(car_data_coords, k=1)
 
         speed_profiles[driver] = {
-            "param": [i/(len(t_plot)-1) for i in idxes],
+            "param": np.array([i/(len(t_plot)-1) for i in idxes]),
             "speed": lap_info["car_data"]["speed"],
         }
         # for i,idx in enumerate(idxes):            
@@ -475,7 +475,6 @@ def main():
     # }
 
     # make_plot(lines)
-
 
     speed_profile = speed_profiles["RUS"]
     speed_model, segments = fit_speed_profile(speed_profile["param"], speed_profile["speed"], smooth_window=21, smooth_polyorder=3, prominence=2.0)
