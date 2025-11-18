@@ -29,11 +29,12 @@ def get_pos_data():
         car_t = car_data["Time"].dt.total_seconds().to_numpy()
         car_speed = car_data["Speed"].to_numpy()
         
-        # if driver == "SAI":
+        # if driver == "RUS":
             # print(lap["LapNumber"])
-        # print(f"{driver}|{lap['LapTime'].total_seconds()}|{lap['Sector1Time'].total_seconds()}|{lap['Sector2Time'].total_seconds()}|{lap['Sector3Time'].total_seconds()}")
-            # for row in car_data.itertuples():
+            # print(f"{driver}|{lap['LapTime'].total_seconds()}|{lap['Sector1Time'].total_seconds()}|{lap['Sector2Time'].total_seconds()}|{lap['Sector3Time'].total_seconds()}")
+        for row in car_data.itertuples():
                 # print(f"{row.Time.total_seconds()}|{row.Speed}|{row.Throttle}|{row.Brake}|{row.nGear}|{row.RPM}|{row.DRS}")
+            print(f"{driver}|{row.Time.total_seconds()}|{row.Speed}")
 
         ans[driver] = {
             "pos_data": {"coords": np.stack(pos_coords, axis=1), "times": pos_t},
@@ -411,7 +412,7 @@ def main():
     #     "options": {"linestyle": "-", "lw": 2, "color": "black", "marker": "o", "ms": 3}
     # }
 
-    make_plot(lines)
+    # make_plot(lines)
 
     # speed_profile = speed_profiles["RUS"]
     # params = speed_profile["param"]
