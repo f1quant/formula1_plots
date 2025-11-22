@@ -13,7 +13,7 @@ def calc_gaps(df):
         gaps_by_lap.append(finish_times)
     return gaps_by_lap
 
-def find_consecutive_pairs(gaps_by_lap):
+def battles(gaps_by_lap):
     ans = []
     active_pairs = {}  # key: (driver_front, driver_behind), value: {from_lap, gaps, last_positions}
 
@@ -101,7 +101,7 @@ def main():
     
     gaps_by_lap = calc_gaps(df) # for each lap, list of [driver, gap to leader]
 
-    consecutive_pairs = find_consecutive_pairs(gaps_by_lap)
+    consecutive_pairs = battles(gaps_by_lap)
 
     for pair in consecutive_pairs:
         if len(pair["gaps"]) < 3: continue # cashing for 3 laps
