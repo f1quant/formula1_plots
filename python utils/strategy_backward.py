@@ -18,7 +18,7 @@ class TwoCompoundTyreRule:
     def __init__(self, compound_indices):
         self.compound_indices = compound_indices
 
-    def all_meta_new(self):
+    def all_meta(self):
         ans = [(-1,list(self.compound_indices))]
         ans += [(c,[c]) for c in self.compound_indices]
         return ans
@@ -47,7 +47,7 @@ class PatternUnlessSCTyreRule:
         self.length = len(self.pattern)
         self.compound_indices = compound_indices
 
-    def all_meta_new(self):
+    def all_meta(self):
         metas = [((False,i), [self.pattern[i-1]])  for i in range(1, self.length + 1)]
         metas.append(((True, -1), list(self.compound_indices)))
         metas += [((True, c), [c] ) for c in self.compound_indices]
@@ -99,7 +99,7 @@ def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, 
     follow_states = {}
 
     for lap in range(num_laps + 1, 0, -1):
-        for meta, meta_compounds in rule.all_meta_new():
+        for meta, meta_compounds in rule.all_meta():
             for comp_idx in meta_compounds:
                 for sc_status in [0,1]: # 1 represents that SC has just started
                     for age in range(0, lap):
