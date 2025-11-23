@@ -4966,22 +4966,63 @@
 
       const leader = drivers[0];
 
-      // Calculate gaps
+      // Build a map of leader's lap completions: lap number -> completion time
+      const leaderLaps = new Map();
+      rows.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        if (driver === leader.driver) {
+          const lapNum = parseInt(r.lap_LapNumber);
+          const lapTime = parseFloat(r.lap_Time);
+          if (!isNaN(lapNum) && !isNaN(lapTime)) {
+            leaderLaps.set(lapNum, lapTime);
+          }
+        }
+      });
+
+      // Calculate gaps for each driver
       drivers.forEach(d => {
         if (d.driver === leader.driver) {
           d.gap = null;
           d.lapped = 0;
-        } else {
-          const lapsDiff = leader.lapNum - d.lapNum;
-          if (lapsDiff > 0) {
-            // Driver is lapped
-            d.lapped = lapsDiff;
-            d.gap = null;
-          } else {
-            // Same lap - calculate time gap
-            d.gap = d.lapTime - leader.lapTime;
-            d.lapped = 0;
+          return;
+        }
+
+        // First lap - can't be lapped
+        if (d.lapNum === 1) {
+          d.gap = d.lapTime - leader.lapTime;
+          d.lapped = 0;
+          return;
+        }
+
+        // Find which lap the leader had completed when this driver completed their latest lap
+        let leaderLapAtDriverTime = 0;
+        for (const [lapNum, lapTime] of leaderLaps.entries()) {
+          if (lapTime <= d.lapTime) {
+            leaderLapAtDriverTime = Math.max(leaderLapAtDriverTime, lapNum);
           }
+        }
+
+        // Calculate lap difference
+        const lapDiff = leaderLapAtDriverTime - d.lapNum;
+        if (lapDiff > 0) {
+          // Driver is truly lapped
+          d.lapped = lapDiff;
+          d.gap = null;
+        } else if (d.lapNum === leader.lapNum) {
+          // Same lap as leader - normal time gap
+          d.gap = d.lapTime - leader.lapTime;
+          d.lapped = 0;
+        } else {
+          // Driver is behind in lap count but not lapped yet
+          // Compare driver's latest lap time with leader's time for the same lap
+          const leaderTimeAtSameLap = leaderLaps.get(d.lapNum);
+          if (leaderTimeAtSameLap !== undefined) {
+            d.gap = d.lapTime - leaderTimeAtSameLap;
+          } else {
+            // Fallback if we don't have leader's data for that lap
+            d.gap = d.lapTime - leader.lapTime;
+          }
+          d.lapped = 0;
         }
       });
 
