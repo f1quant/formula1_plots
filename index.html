@@ -146,6 +146,27 @@
       gap: 16px;
     }
 
+    .replay-control-btn {
+      background: rgba(0, 224, 255, 0.1);
+      border: 1px solid var(--accent-color);
+      color: var(--accent-color);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .replay-control-btn:hover {
+      background: rgba(0, 224, 255, 0.2);
+      box-shadow: 0 0 8px rgba(0, 224, 255, 0.3);
+    }
+
+    .replay-control-btn:active {
+      transform: scale(0.95);
+    }
+
     .replay-slider {
       flex: 1;
       height: 6px;
@@ -1713,7 +1734,9 @@
     <!-- Replay Control Panel (replaces session selector when replay mode is active) -->
     <div id="replayControlPanel" class="replay-control-panel hidden">
       <div class="replay-slider-container">
-        <input type="range" id="replaySlider" min="0" max="100" value="0" class="replay-slider" step="0.1">
+        <button id="replayPlayBtn" class="replay-control-btn" title="Play">▶</button>
+        <button id="replayPauseBtn" class="replay-control-btn hidden" title="Pause">⏸</button>
+        <input type="range" id="replaySlider" min="0" max="100" value="0" class="replay-slider" step="any">
         <div class="replay-time-display">
           <span id="replayCurrentTime">00:00:00</span>
         </div>
@@ -2270,6 +2293,8 @@
     const replaySessionText = document.getElementById('replaySessionText');
     const replayCurrentTime = document.getElementById('replayCurrentTime');
     const replayCurrentLap = document.getElementById('replayCurrentLap');
+    const replayPlayBtn = document.getElementById('replayPlayBtn');
+    const replayPauseBtn = document.getElementById('replayPauseBtn');
 
     let allRows = [];
     let allRowsRaw = [];
@@ -2460,6 +2485,14 @@
       enabled: false
     };
 
+    // Animation state for replay playback
+    let isPlaying = false;
+    let animationFrameId = null;
+    let lastFrameTime = 0;
+    let isProgrammaticSliderChange = false; // Flag to distinguish user vs code changes
+    const FRAME_RATE = 30; // 30 fps
+    const FRAME_INTERVAL = 1000 / FRAME_RATE; // ~33.33ms per frame
+
     function openReplayOverlay() {
       if (!replayOverlay) return;
       replayOverlay.classList.add('show');
@@ -2582,6 +2615,85 @@
         const lapTime = parseFloat(r.lap_Time);
         return !isNaN(lapTime) && lapTime <= replayTime;
       });
+    }
+
+    function playReplay() {
+      if (!replayConfig.enabled || isPlaying) return;
+
+      isPlaying = true;
+      replayPlayBtn.classList.add('hidden');
+      replayPauseBtn.classList.remove('hidden');
+      lastFrameTime = performance.now();
+
+      // Start animation loop
+      animationFrameId = requestAnimationFrame(animateReplay);
+    }
+
+    function pauseReplay() {
+      if (!isPlaying) return;
+
+      isPlaying = false;
+      replayPauseBtn.classList.add('hidden');
+      replayPlayBtn.classList.remove('hidden');
+
+      // Cancel animation
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    }
+
+    function animateReplay(currentTime) {
+      if (!isPlaying) return;
+
+      const deltaTime = currentTime - lastFrameTime;
+
+      // Only update if enough time has passed for next frame (30fps)
+      if (deltaTime >= FRAME_INTERVAL) {
+        const currentValue = parseFloat(replaySlider.value);
+        const maxValue = parseFloat(replaySlider.max);
+
+        // Calculate how much to advance (1 second of session time per second of real time)
+        // At 30fps, advance by 1/30th of a second per frame
+        const increment = 1 / FRAME_RATE;
+        const newValue = currentValue + increment;
+
+        if (newValue >= maxValue) {
+          // Reached the end, pause
+          isProgrammaticSliderChange = true;
+          replaySlider.value = maxValue;
+          isProgrammaticSliderChange = false;
+          updateReplayTimeDisplay(maxValue);
+          updateReplayLapDisplay(maxValue);
+          applyReplayTimeFilter();
+          if (currentSessionData && currentSessionData.length >= 0) {
+            initializePanel(appState.currentActiveTab, currentSessionData);
+          }
+          pauseReplay();
+          return;
+        }
+
+        // Update slider and displays
+        console.log('BEFORE setting slider - newValue:', newValue, 'slider.value:', replaySlider.value);
+        isProgrammaticSliderChange = true;
+        replaySlider.value = newValue;
+        isProgrammaticSliderChange = false;
+        console.log('AFTER setting slider - newValue:', newValue, 'slider.value:', replaySlider.value);
+
+        updateReplayTimeDisplay(newValue);
+        updateReplayLapDisplay(newValue);
+
+        // Refilter session data and refresh active panel
+        applyReplayTimeFilter();
+        if (currentSessionData && currentSessionData.length >= 0) {
+          initializePanel(appState.currentActiveTab, currentSessionData);
+        }
+
+        lastFrameTime = currentTime;
+      }
+
+      // Continue animation
+      animationFrameId = requestAnimationFrame(animateReplay);
     }
 
     function toggleSessionSelector() {
@@ -3096,6 +3208,9 @@
         return;
       }
 
+      // Stop any ongoing playback when selecting a new session
+      pauseReplay();
+
       // Enable replay mode
       replayConfig.enabled = true;
 
@@ -3132,6 +3247,7 @@
 
     function handleReplayDisable() {
       // Disable replay mode (session stays the same, just show normal selector)
+      pauseReplay(); // Stop any ongoing playback
       replayConfig.enabled = false;
       updateReplayButtonState();
       toggleSessionSelector();
@@ -3216,6 +3332,14 @@
       }
       if (replaySlider) {
         replaySlider.addEventListener('input', () => {
+          console.log('Input event fired. isProgrammaticSliderChange:', isProgrammaticSliderChange, 'isPlaying:', isPlaying);
+
+          // Only pause if this is a user-initiated change (not from animation)
+          if (isPlaying && !isProgrammaticSliderChange) {
+            console.log('Pausing replay due to user interaction');
+            pauseReplay();
+          }
+
           const currentTime = parseFloat(replaySlider.value);
           updateReplayTimeDisplay(currentTime);
           updateReplayLapDisplay(currentTime);
@@ -3225,6 +3349,16 @@
           if (currentSessionData && currentSessionData.length >= 0) {
             initializePanel(appState.currentActiveTab, currentSessionData);
           }
+        });
+      }
+      if (replayPlayBtn) {
+        replayPlayBtn.addEventListener('click', () => {
+          playReplay();
+        });
+      }
+      if (replayPauseBtn) {
+        replayPauseBtn.addEventListener('click', () => {
+          pauseReplay();
         });
       }
     }
