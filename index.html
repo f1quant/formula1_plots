@@ -2649,7 +2649,10 @@
 
     function updateReplayTimeDisplay(time) {
       if (replayCurrentTime) {
-        replayCurrentTime.textContent = formatSessionTime(time);
+        // Display relative time from session start (min time = 0)
+        const minTime = replaySlider ? parseFloat(replaySlider.min) : 0;
+        const relativeTime = time - minTime;
+        replayCurrentTime.textContent = formatSessionTime(relativeTime);
       }
     }
 
