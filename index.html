@@ -3300,6 +3300,8 @@
       appState.filters.pitLaps = true;
       appState.filters.includeLapped = true;
       appState.filters.includeRetired = true;
+      appState.tyreDeg.filterMinRows = 0;
+      appState.tyreDeg.filterMinCorr = -1.0;
 
       // Update main session selectors to match replay selection
       seasonSel.value = season;
@@ -6480,8 +6482,11 @@ function updateSelectedDrivers(mutator, options = {}) {
     };
 
     function formatSharedFilterValue(value) {
+      // Explicitly handle 0 to ensure it's displayed
+      if (value === 0) return '0';
+
       if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : '';
+        return Number.isFinite(value) ? String(value) : '';
       }
       return value ?? '';
     }
