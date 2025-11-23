@@ -2392,6 +2392,13 @@
       }
     }
 
+    function deleteSpoilerCookie() {
+      document.cookie = `${SPOILER_COOKIE_NAME}=;path=/;max-age=0`;
+    }
+
+    // Expose to global scope for DataCache.reloadData
+    window.deleteSpoilerCookie = deleteSpoilerCookie;
+
     function updateSpoilerModeButtonState() {
       if (!spoilerModeBtn) return;
       spoilerModeBtn.textContent = spoilerConfig.enabled ? 'Spoiler: ON' : 'Spoiler: OFF';

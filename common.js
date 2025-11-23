@@ -36,6 +36,10 @@ const DataCache = {
 
   // Reload data (invalidate cache)
   reloadData() {
+    // Delete spoiler cookie to trigger modal on next page load
+    if (typeof window.deleteSpoilerCookie === 'function') {
+      window.deleteSpoilerCookie();
+    }
     // Set a flag with timestamp that will be used on next page load
     const timestamp = Date.now().toString();
     sessionStorage.setItem(this.CACHE_BUST_KEY, timestamp);
