@@ -2725,6 +2725,147 @@
     // Track previous filtered data state to detect changes
     let previousFilteredDataLength = 0;
 
+    // Track emitted sectors during continuous playback to avoid duplicates
+    // Map<driver, Map<lapNumber, Set<sectorNumber>>>
+    let emittedSectors = new Map();
+
+    // Emit all applicable sector events for incomplete laps at the current replay time
+    function emitAllSectorEvents(replayTime) {
+      if (!currentSessionDataUnfiltered) return;
+
+      console.log('[SECTOR DEBUG] emitAllSectorEvents called, replayTime:', replayTime);
+
+      // Clear emitted sectors tracking when rebuilding state
+      emittedSectors.clear();
+
+      currentSessionDataUnfiltered.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNumber = parseInt(r.lap_LapNumber);
+        const lapTime = parseFloat(r.lap_Time);
+        const s1SessionTime = parseFloat(r.lap_Sector1SessionTime);
+        const s2SessionTime = parseFloat(r.lap_Sector2SessionTime);
+
+        if (!driver || isNaN(lapNumber)) return;
+
+        // Debug VER lap 1
+        if (driver === 'VER' && lapNumber === 1) {
+          console.log('[SECTOR DEBUG] VER lap 1:', {
+            lapTime,
+            s1SessionTime,
+            s2SessionTime,
+            s1Time: r.lap_Sector1Time,
+            s2Time: r.lap_Sector2Time,
+            lapComplete: lapTime <= replayTime,
+            s1Complete: s1SessionTime <= replayTime,
+            s2Complete: s2SessionTime <= replayTime
+          });
+        }
+
+        // Only emit for incomplete laps (lap_Time > replayTime or missing)
+        if (isNaN(lapTime) || lapTime > replayTime) {
+          // Emit sector 1 if completed
+          if (!isNaN(s1SessionTime) && s1SessionTime <= replayTime) {
+            console.log('[SECTOR DEBUG] Emitting S1:', driver, 'L' + lapNumber);
+            replayEventEmitter.emit(ReplayEvents.SECTOR_COMPLETED, {
+              sectorNumber: 1,
+              driver: driver,
+              lapNumber: lapNumber,
+              sectorTime: parseFloat(r.lap_Sector1Time),
+              lapRow: r,
+              sessionData: currentSessionData,
+              replayTime: replayTime
+            });
+            // Track as emitted
+            if (!emittedSectors.has(driver)) emittedSectors.set(driver, new Map());
+            if (!emittedSectors.get(driver).has(lapNumber)) emittedSectors.get(driver).set(lapNumber, new Set());
+            emittedSectors.get(driver).get(lapNumber).add(1);
+          }
+
+          // Emit sector 2 if completed
+          if (!isNaN(s2SessionTime) && s2SessionTime <= replayTime) {
+            console.log('[SECTOR DEBUG] Emitting S2:', driver, 'L' + lapNumber);
+            replayEventEmitter.emit(ReplayEvents.SECTOR_COMPLETED, {
+              sectorNumber: 2,
+              driver: driver,
+              lapNumber: lapNumber,
+              sectorTime: parseFloat(r.lap_Sector2Time),
+              lapRow: r,
+              sessionData: currentSessionData,
+              replayTime: replayTime
+            });
+            // Track as emitted
+            if (!emittedSectors.has(driver)) emittedSectors.set(driver, new Map());
+            if (!emittedSectors.get(driver).has(lapNumber)) emittedSectors.get(driver).set(lapNumber, new Set());
+            emittedSectors.get(driver).get(lapNumber).add(2);
+          }
+        }
+      });
+    }
+
+    // Emit incremental sector events during continuous playback (only new sectors)
+    function emitIncrementalSectorEvents(previousTime, currentTime) {
+      if (!currentSessionDataUnfiltered) return;
+
+      currentSessionDataUnfiltered.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNumber = parseInt(r.lap_LapNumber);
+        const lapTime = parseFloat(r.lap_Time);
+        const s1SessionTime = parseFloat(r.lap_Sector1SessionTime);
+        const s2SessionTime = parseFloat(r.lap_Sector2SessionTime);
+
+        if (!driver || isNaN(lapNumber)) return;
+
+        // Only check incomplete laps
+        if (isNaN(lapTime) || lapTime > currentTime) {
+          // Check if sector 1 was crossed in this interval
+          if (!isNaN(s1SessionTime) && s1SessionTime > previousTime && s1SessionTime <= currentTime) {
+            // Check if not already emitted
+            const alreadyEmitted = emittedSectors.has(driver) &&
+                                  emittedSectors.get(driver).has(lapNumber) &&
+                                  emittedSectors.get(driver).get(lapNumber).has(1);
+            if (!alreadyEmitted) {
+              replayEventEmitter.emit(ReplayEvents.SECTOR_COMPLETED, {
+                sectorNumber: 1,
+                driver: driver,
+                lapNumber: lapNumber,
+                sectorTime: parseFloat(r.lap_Sector1Time),
+                lapRow: r,
+                sessionData: currentSessionData,
+                replayTime: currentTime
+              });
+              // Track as emitted
+              if (!emittedSectors.has(driver)) emittedSectors.set(driver, new Map());
+              if (!emittedSectors.get(driver).has(lapNumber)) emittedSectors.get(driver).set(lapNumber, new Set());
+              emittedSectors.get(driver).get(lapNumber).add(1);
+            }
+          }
+
+          // Check if sector 2 was crossed in this interval
+          if (!isNaN(s2SessionTime) && s2SessionTime > previousTime && s2SessionTime <= currentTime) {
+            // Check if not already emitted
+            const alreadyEmitted = emittedSectors.has(driver) &&
+                                  emittedSectors.get(driver).has(lapNumber) &&
+                                  emittedSectors.get(driver).get(lapNumber).has(2);
+            if (!alreadyEmitted) {
+              replayEventEmitter.emit(ReplayEvents.SECTOR_COMPLETED, {
+                sectorNumber: 2,
+                driver: driver,
+                lapNumber: lapNumber,
+                sectorTime: parseFloat(r.lap_Sector2Time),
+                lapRow: r,
+                sessionData: currentSessionData,
+                replayTime: currentTime
+              });
+              // Track as emitted
+              if (!emittedSectors.has(driver)) emittedSectors.set(driver, new Map());
+              if (!emittedSectors.get(driver).has(lapNumber)) emittedSectors.get(driver).set(lapNumber, new Set());
+              emittedSectors.get(driver).get(lapNumber).add(2);
+            }
+          }
+        }
+      });
+    }
+
     function openReplayOverlay() {
       if (!replayOverlay) return;
       replayOverlay.classList.add('show');
@@ -2801,6 +2942,10 @@
       // Apply time filter and reinitialize current tab with filtered data
       applyReplayTimeFilter();
       previousFilteredDataLength = currentSessionData ? currentSessionData.length : 0;
+
+      // Emit sector events for incomplete laps
+      emitAllSectorEvents(minTime);
+
       if (currentSessionData && currentSessionData.length >= 0) {
         initializePanel(appState.currentActiveTab, currentSessionData);
       }
@@ -2912,6 +3057,9 @@
 
       if (newSessionTime >= maxValue) {
         newSessionTime = maxValue;
+        // Store previous time before updating
+        const previousTime = parseFloat(replaySlider.value);
+
         // Update slider and displays one last time
         isProgrammaticSliderChange = true;
         replaySlider.value = newSessionTime;
@@ -2922,6 +3070,9 @@
         // Store previous data length before filtering
         const previousLength = previousFilteredDataLength;
         applyReplayTimeFilter();
+
+        // Emit incremental sector events for sectors crossed during this interval
+        emitIncrementalSectorEvents(previousTime, newSessionTime);
 
         // Detect if new laps appeared
         const currentLength = currentSessionData ? currentSessionData.length : 0;
@@ -2939,6 +3090,9 @@
         return;
       }
 
+      // Store previous time before updating
+      const previousTime = parseFloat(replaySlider.value);
+
       // Update slider and displays
       isProgrammaticSliderChange = true;
       replaySlider.value = newSessionTime;
@@ -2950,6 +3104,9 @@
       // Store previous data length before filtering
       const previousLength = previousFilteredDataLength;
       applyReplayTimeFilter();
+
+      // Emit incremental sector events for sectors crossed during this interval
+      emitIncrementalSectorEvents(previousTime, newSessionTime);
 
       // Detect if new laps appeared
       const currentLength = currentSessionData ? currentSessionData.length : 0;
@@ -3731,6 +3888,9 @@
           // Refilter session data and refresh active panel
           applyReplayTimeFilter();
           previousFilteredDataLength = currentSessionData ? currentSessionData.length : 0;
+
+          // Emit sector events for incomplete laps
+          emitAllSectorEvents(currentTime);
 
           // Only update charts immediately for manual user scrubbing, not programmatic changes
           // During animation, the event emitter will handle updates
@@ -5023,37 +5183,44 @@
 
     // Find session bests for lap and sectors
     function findTimingSessionBests(rows) {
-      if (!rows || rows.length === 0) {
-        return {
-          fastestLap: null,
-          fastestS1: null,
-          fastestS2: null,
-          fastestS3: null
-        };
-      }
-
       let fastestLap = Infinity;
       let fastestS1 = Infinity;
       let fastestS2 = Infinity;
       let fastestS3 = Infinity;
 
-      rows.forEach(r => {
-        const lapTime = parseFloat(r.lap_LapTime);
-        const s1 = parseFloat(r.lap_Sector1Time);
-        const s2 = parseFloat(r.lap_Sector2Time);
-        const s3 = parseFloat(r.lap_Sector3Time);
+      // Check completed laps
+      if (rows && rows.length > 0) {
+        rows.forEach(r => {
+          const lapTime = parseFloat(r.lap_LapTime);
+          const s1 = parseFloat(r.lap_Sector1Time);
+          const s2 = parseFloat(r.lap_Sector2Time);
+          const s3 = parseFloat(r.lap_Sector3Time);
 
-        if (!isNaN(lapTime) && lapTime > 0 && lapTime < fastestLap) {
-          fastestLap = lapTime;
-        }
-        if (!isNaN(s1) && s1 > 0 && s1 < fastestS1) {
+          if (!isNaN(lapTime) && lapTime > 0 && lapTime < fastestLap) {
+            fastestLap = lapTime;
+          }
+          if (!isNaN(s1) && s1 > 0 && s1 < fastestS1) {
+            fastestS1 = s1;
+          }
+          if (!isNaN(s2) && s2 > 0 && s2 < fastestS2) {
+            fastestS2 = s2;
+          }
+          if (!isNaN(s3) && s3 > 0 && s3 < fastestS3) {
+            fastestS3 = s3;
+          }
+        });
+      }
+
+      // Also check in-progress laps for sector times
+      timingInProgressLaps.forEach(inProgress => {
+        const s1 = inProgress.s1;
+        const s2 = inProgress.s2;
+
+        if (s1 !== null && !isNaN(s1) && s1 > 0 && s1 < fastestS1) {
           fastestS1 = s1;
         }
-        if (!isNaN(s2) && s2 > 0 && s2 < fastestS2) {
+        if (s2 !== null && !isNaN(s2) && s2 > 0 && s2 < fastestS2) {
           fastestS2 = s2;
-        }
-        if (!isNaN(s3) && s3 > 0 && s3 < fastestS3) {
-          fastestS3 = s3;
         }
       });
 
@@ -5069,14 +5236,39 @@
     function findTimingPersonalBests(rows) {
       const personalBests = new Map();
 
-      rows.forEach(r => {
-        const driver = String(r.lap_Driver || "").trim();
-        if (!driver) return;
+      // Check completed laps
+      if (rows && rows.length > 0) {
+        rows.forEach(r => {
+          const driver = String(r.lap_Driver || "").trim();
+          if (!driver) return;
 
-        const s1 = parseFloat(r.lap_Sector1Time);
-        const s2 = parseFloat(r.lap_Sector2Time);
-        const s3 = parseFloat(r.lap_Sector3Time);
+          const s1 = parseFloat(r.lap_Sector1Time);
+          const s2 = parseFloat(r.lap_Sector2Time);
+          const s3 = parseFloat(r.lap_Sector3Time);
 
+          if (!personalBests.has(driver)) {
+            personalBests.set(driver, {
+              fastestS1: Infinity,
+              fastestS2: Infinity,
+              fastestS3: Infinity
+            });
+          }
+
+          const pb = personalBests.get(driver);
+          if (!isNaN(s1) && s1 > 0 && s1 < pb.fastestS1) {
+            pb.fastestS1 = s1;
+          }
+          if (!isNaN(s2) && s2 > 0 && s2 < pb.fastestS2) {
+            pb.fastestS2 = s2;
+          }
+          if (!isNaN(s3) && s3 > 0 && s3 < pb.fastestS3) {
+            pb.fastestS3 = s3;
+          }
+        });
+      }
+
+      // Also check in-progress laps for sector times
+      timingInProgressLaps.forEach((inProgress, driver) => {
         if (!personalBests.has(driver)) {
           personalBests.set(driver, {
             fastestS1: Infinity,
@@ -5086,14 +5278,14 @@
         }
 
         const pb = personalBests.get(driver);
-        if (!isNaN(s1) && s1 > 0 && s1 < pb.fastestS1) {
+        const s1 = inProgress.s1;
+        const s2 = inProgress.s2;
+
+        if (s1 !== null && !isNaN(s1) && s1 > 0 && s1 < pb.fastestS1) {
           pb.fastestS1 = s1;
         }
-        if (!isNaN(s2) && s2 > 0 && s2 < pb.fastestS2) {
+        if (s2 !== null && !isNaN(s2) && s2 > 0 && s2 < pb.fastestS2) {
           pb.fastestS2 = s2;
-        }
-        if (!isNaN(s3) && s3 > 0 && s3 < pb.fastestS3) {
-          pb.fastestS3 = s3;
         }
       });
 
@@ -5105,16 +5297,39 @@
       const container = document.getElementById('timingTableContainer');
       if (!container) return;
 
-      if (!sessionData || sessionData.length === 0) {
-        container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No timing data available</div>';
-        return;
-      }
-
       // Get driver colors
       const driverColors = DriverInfo.getDriverColors(year, round, sessionType);
 
       // Calculate gaps and get latest lap for each driver
-      const drivers = calculateTimingGaps(sessionData, unfilteredData, replayTime);
+      let drivers = calculateTimingGaps(sessionData, unfilteredData, replayTime);
+
+      // If no completed laps but we have in-progress laps, create virtual drivers
+      if (drivers.length === 0 && timingInProgressLaps.size > 0) {
+        console.log('[SECTOR DEBUG] No completed laps, building from in-progress:', timingInProgressLaps);
+        drivers = Array.from(timingInProgressLaps.entries()).map(([driver, data]) => ({
+          driver: driver,
+          lapNum: data.lapNum,
+          lapTime: 0,
+          position: data.position || 0,
+          lapDuration: null,
+          sector1: null,
+          sector2: null,
+          sector3: null,
+          tyreCompound: data.tyre,
+          tyreLife: null,
+          isPersonalBest: false,
+          finishStatus: '',
+          gap: null,
+          lapped: 0
+        }));
+        // Sort by position
+        drivers.sort((a, b) => (a.position || 999) - (b.position || 999));
+      }
+
+      if (drivers.length === 0) {
+        container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No timing data available</div>';
+        return;
+      }
 
       // Find session bests
       const sessionBests = findTimingSessionBests(sessionData);
@@ -5194,8 +5409,17 @@
         }
         html += '</td>';
 
-        // Sectors
-        [d.sector1, d.sector2, d.sector3].forEach((sectorTime, idx) => {
+        // Sectors - check for in-progress lap data first
+        const inProgress = timingInProgressLaps.get(d.driver);
+        let sectorsToShow = [d.sector1, d.sector2, d.sector3];
+
+        // If driver has in-progress lap, use those sectors instead
+        if (inProgress) {
+          // Show whatever sectors we have from in-progress, clear S3
+          sectorsToShow = [inProgress.s1, inProgress.s2, null];
+        }
+
+        sectorsToShow.forEach((sectorTime, idx) => {
           const sessionBest = [sessionBests.fastestS1, sessionBests.fastestS2, sessionBests.fastestS3][idx];
           const driverPB = personalBests.get(d.driver);
           const personalBest = driverPB ? [driverPB.fastestS1, driverPB.fastestS2, driverPB.fastestS3][idx] : null;
@@ -5235,18 +5459,26 @@
       container.innerHTML = html;
     }
 
+    // Track in-progress laps for timing table (sectors completed but lap not finished)
+    // Map<driver, {lapNum, s1, s2, tyre, position}>
+    const timingInProgressLaps = new Map();
+
     // Set up replay listener for timing tab
     let timingListenerSetup = false;
 
     function setupTimingReplayListener() {
       if (timingListenerSetup) return;
 
-      const listener = (eventData) => {
+      // LAP_COMPLETED listener
+      const lapListener = (eventData) => {
         if (appState.currentActiveTab !== 'timing') return;
 
         const year = appState.session.season;
         const [round] = appState.session.gp.split('||');
         const sessionType = appState.session.sessionType;
+
+        // Clear in-progress laps when laps complete
+        timingInProgressLaps.clear();
 
         // Pass unfiltered data and replay time to properly handle finish status
         renderTimingTable(
@@ -5259,7 +5491,55 @@
         );
       };
 
-      replayEventEmitter.subscribe(ReplayEvents.LAP_COMPLETED, listener);
+      // SECTOR_COMPLETED listener
+      const sectorListener = (eventData) => {
+        console.log('[SECTOR DEBUG] Sector listener received:', eventData.driver, 'L' + eventData.lapNumber, 'S' + eventData.sectorNumber);
+
+        if (appState.currentActiveTab !== 'timing') {
+          console.log('[SECTOR DEBUG] Ignoring - not on timing tab');
+          return;
+        }
+
+        const { sectorNumber, driver, lapNumber, sectorTime, lapRow } = eventData;
+
+        // Update in-progress lap data
+        if (!timingInProgressLaps.has(driver)) {
+          timingInProgressLaps.set(driver, {
+            lapNum: lapNumber,
+            s1: null,
+            s2: null,
+            tyre: String(lapRow.lap_Compound || "").trim(),
+            position: parseInt(lapRow.lap_Position)
+          });
+        }
+
+        const inProgress = timingInProgressLaps.get(driver);
+        if (sectorNumber === 1) {
+          inProgress.s1 = sectorTime;
+          inProgress.s2 = null; // Clear S2 when S1 comes in
+        } else if (sectorNumber === 2) {
+          inProgress.s2 = sectorTime;
+        }
+
+        console.log('[SECTOR DEBUG] Updated in-progress for', driver, ':', inProgress);
+
+        // Re-render timing table with updated sector data
+        const year = appState.session.season;
+        const [round] = appState.session.gp.split('||');
+        const sessionType = appState.session.sessionType;
+
+        renderTimingTable(
+          eventData.sessionData,
+          year,
+          round,
+          sessionType,
+          currentSessionDataUnfiltered,
+          eventData.replayTime
+        );
+      };
+
+      replayEventEmitter.subscribe(ReplayEvents.LAP_COMPLETED, lapListener);
+      replayEventEmitter.subscribe(ReplayEvents.SECTOR_COMPLETED, sectorListener);
       timingListenerSetup = true;
     }
 
