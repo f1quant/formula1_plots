@@ -2487,11 +2487,11 @@
 
     // Animation state for replay playback
     let isPlaying = false;
-    let animationFrameId = null;
-    let lastFrameTime = 0;
+    let intervalId = null;
+    let replayStartRealTime = 0; // Real-world time when play started
+    let replayStartSessionTime = 0; // Session time when play started
     let isProgrammaticSliderChange = false; // Flag to distinguish user vs code changes
-    const FRAME_RATE = 30; // 30 fps
-    const FRAME_INTERVAL = 1000 / FRAME_RATE; // ~33.33ms per frame
+    const UPDATE_INTERVAL = 33; // ~30fps when tab is active, throttled to ~1000ms in background
 
     function openReplayOverlay() {
       if (!replayOverlay) return;
@@ -2536,7 +2536,6 @@
     }
 
     function initializeReplaySlider() {
-      console.log('initializeReplaySlider called. enabled:', replayConfig.enabled, 'dataLength:', currentSessionDataUnfiltered?.length);
       if (!replayConfig.enabled || !currentSessionDataUnfiltered || currentSessionDataUnfiltered.length === 0) {
         return;
       }
@@ -2550,8 +2549,6 @@
       const minTime = Math.min(...startTimes);
       const maxTime = Math.max(...endTimes);
 
-      console.log('Setting slider range:', minTime, 'to', maxTime);
-
       replaySlider.min = minTime;
       replaySlider.max = maxTime;
 
@@ -2564,9 +2561,7 @@
       updateReplayLapDisplay(minTime);
 
       // Apply time filter and reinitialize current tab with filtered data
-      console.log('Applying replay filter and initializing panel. Unfiltered rows:', currentSessionDataUnfiltered.length);
       applyReplayTimeFilter();
-      console.log('After filter. Filtered rows:', currentSessionData?.length, 'activeTab:', appState.currentActiveTab);
       if (currentSessionData && currentSessionData.length >= 0) {
         initializePanel(appState.currentActiveTab, currentSessionData);
       }
@@ -2638,10 +2633,13 @@
       isPlaying = true;
       replayPlayBtn.classList.add('hidden');
       replayPauseBtn.classList.remove('hidden');
-      lastFrameTime = performance.now();
 
-      // Start animation loop
-      animationFrameId = requestAnimationFrame(animateReplay);
+      // Record start times for clock-based animation
+      replayStartRealTime = performance.now();
+      replayStartSessionTime = parseFloat(replaySlider.value);
+
+      // Start animation loop with setInterval (works in background tabs)
+      intervalId = setInterval(animateReplay, UPDATE_INTERVAL);
     }
 
     function pauseReplay() {
@@ -2652,63 +2650,55 @@
       replayPlayBtn.classList.remove('hidden');
 
       // Cancel animation
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
       }
     }
 
-    function animateReplay(currentTime) {
+    function animateReplay() {
       if (!isPlaying) return;
 
-      const deltaTime = currentTime - lastFrameTime;
+      // Calculate session time based on real elapsed time
+      // 1 second of real time = 1 second of session time
+      const currentTime = performance.now();
+      const elapsedRealTime = currentTime - replayStartRealTime; // milliseconds
+      const elapsedSessionTime = elapsedRealTime / 1000; // convert to seconds
+      let newSessionTime = replayStartSessionTime + elapsedSessionTime;
 
-      // Only update if enough time has passed for next frame (30fps)
-      if (deltaTime >= FRAME_INTERVAL) {
-        const currentValue = parseFloat(replaySlider.value);
-        const maxValue = parseFloat(replaySlider.max);
+      const maxValue = parseFloat(replaySlider.max);
 
-        // Calculate how much to advance (1 second of session time per second of real time)
-        // At 30fps, advance by 1/30th of a second per frame
-        const increment = 1 / FRAME_RATE;
-        const newValue = currentValue + increment;
-
-        if (newValue >= maxValue) {
-          // Reached the end, pause
-          isProgrammaticSliderChange = true;
-          replaySlider.value = maxValue;
-          isProgrammaticSliderChange = false;
-          updateReplayTimeDisplay(maxValue);
-          updateReplayLapDisplay(maxValue);
-          applyReplayTimeFilter();
-          if (currentSessionData && currentSessionData.length >= 0) {
-            initializePanel(appState.currentActiveTab, currentSessionData);
-          }
-          pauseReplay();
-          return;
-        }
-
-        // Update slider and displays
-        console.log('BEFORE setting slider - newValue:', newValue, 'slider.value:', replaySlider.value);
+      if (newSessionTime >= maxValue) {
+        newSessionTime = maxValue;
+        // Update slider and displays one last time
         isProgrammaticSliderChange = true;
-        replaySlider.value = newValue;
+        replaySlider.value = newSessionTime;
         isProgrammaticSliderChange = false;
-        console.log('AFTER setting slider - newValue:', newValue, 'slider.value:', replaySlider.value);
-
-        updateReplayTimeDisplay(newValue);
-        updateReplayLapDisplay(newValue);
-
-        // Refilter session data and refresh active panel
+        updateReplayTimeDisplay(newSessionTime);
+        updateReplayLapDisplay(newSessionTime);
         applyReplayTimeFilter();
         if (currentSessionData && currentSessionData.length >= 0) {
           initializePanel(appState.currentActiveTab, currentSessionData);
         }
-
-        lastFrameTime = currentTime;
+        // Pause at the end
+        pauseReplay();
+        return;
       }
 
-      // Continue animation
-      animationFrameId = requestAnimationFrame(animateReplay);
+      // Update slider and displays
+      isProgrammaticSliderChange = true;
+      replaySlider.value = newSessionTime;
+      isProgrammaticSliderChange = false;
+
+      updateReplayTimeDisplay(newSessionTime);
+      updateReplayLapDisplay(newSessionTime);
+
+      // Refilter session data and refresh active panel
+      applyReplayTimeFilter();
+      if (currentSessionData && currentSessionData.length >= 0) {
+        initializePanel(appState.currentActiveTab, currentSessionData);
+      }
+      // setInterval handles the looping automatically
     }
 
     function toggleSessionSelector() {
@@ -3358,25 +3348,19 @@
       }
       if (replaySlider) {
         replaySlider.addEventListener('input', () => {
-          console.log('Input event fired. isProgrammaticSliderChange:', isProgrammaticSliderChange, 'isPlaying:', isPlaying);
 
           // Only pause if this is a user-initiated change (not from animation)
           if (isPlaying && !isProgrammaticSliderChange) {
-            console.log('Pausing replay due to user interaction');
             pauseReplay();
           }
 
           const currentTime = parseFloat(replaySlider.value);
-          console.log('Manual slider change. currentTime:', currentTime);
           updateReplayTimeDisplay(currentTime);
           updateReplayLapDisplay(currentTime);
 
           // Refilter session data and refresh active panel
-          console.log('Before filter - unfiltered rows:', currentSessionDataUnfiltered?.length);
           applyReplayTimeFilter();
-          console.log('After filter - filtered rows:', currentSessionData?.length, 'activeTab:', appState.currentActiveTab);
           if (currentSessionData && currentSessionData.length >= 0) {
-            console.log('Calling initializePanel for:', appState.currentActiveTab);
             initializePanel(appState.currentActiveTab, currentSessionData);
           }
         });
@@ -4344,7 +4328,6 @@
     }
 
     function renderStrategyChart(rows, year, round, sessionType) {
-      console.log('renderStrategyChart called with', rows.length, 'rows');
       // Get driver colors for this specific session
       const driverColors = DriverInfo.getDriverColors(year, round, sessionType);
 
@@ -6262,7 +6245,6 @@ function updateSelectedDrivers(mutator, options = {}) {
     }
 
     function renderSharedFiltersFromState() {
-      console.log('renderSharedFiltersFromState called. appState.filters:', appState.filters);
       Object.entries(SHARED_FILTER_CONFIG).forEach(([key, config]) => {
         const value = appState.filters[key];
         config.ids.forEach(id => {
@@ -6271,7 +6253,6 @@ function updateSelectedDrivers(mutator, options = {}) {
             console.log(`Element not found: ${id}`);
             return;
           }
-          console.log(`Setting ${id} to ${value} (type: ${config.type})`);
           if (config.type === 'bool') {
             element.checked = Boolean(value);
           } else {
