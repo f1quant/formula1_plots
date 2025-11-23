@@ -5353,7 +5353,7 @@ function updateSelectedDrivers(mutator, options = {}) {
       let parsedValue;
       if (key === 'filterMinRows') {
         const parsed = parseInt(rawText, 10);
-        if (!Number.isFinite(parsed) || parsed < 1) {
+        if (!Number.isFinite(parsed)) {
           return previousValue;
         }
         parsedValue = parsed;
