@@ -3754,13 +3754,13 @@
       applySpoilerFilter();
 
       // Reset all filters to show everything
-      appState.filters.minLap = 0;
+      appState.filters.minLap = 1;
       appState.filters.endLaps = 0;
       appState.filters.minStintLap = 0;
       appState.filters.minDist = 0;
-      appState.filters.rainfall = true;
-      appState.filters.safetyCar = true;
-      appState.filters.pitLaps = true;
+      appState.filters.rainfall = false;
+      appState.filters.safetyCar = false;
+      appState.filters.pitLaps = false;
       appState.filters.includeLapped = true;
       appState.filters.includeRetired = true;
       appState.tyreDeg.filterMinRows = 0;
