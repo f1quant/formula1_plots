@@ -4571,6 +4571,7 @@
       const year = appState.session.season;
       const [round, meeting] = appState.session.gp.split('||');
       const sessionType = appState.session.sessionType;
+      const hasRows = Array.isArray(sessionData) && sessionData.length > 0;
 
       switch(panelName) {
         case 'timing':
@@ -4587,6 +4588,14 @@
           setupStrategyReplayListener();
           break;
         case 'race-trace':
+          if (!hasRows) {
+            if (raceTraceChart) {
+              raceTraceChart.clear();
+            }
+            const chartContainer = document.getElementById('raceTraceChart');
+            if (chartContainer) chartContainer.innerHTML = '<div style="color:white;padding:12px;text-align:center;">No data at current replay time</div>';
+            return;
+          }
           raceTraceCurrentSessionRows = sessionData;
           raceTraceDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
           const lapNumbers = sessionData.map(r => parseInt(r.lap_LapNumber)).filter(n => !isNaN(n));
@@ -4617,6 +4626,15 @@
           setupRaceTraceReplayListener();
           break;
         case 'lap-time':
+          if (!hasRows) {
+            if (lapTimeChartInstance) {
+              lapTimeChartInstance.clear();
+            }
+            if (lapTimeChart) {
+              lapTimeChart.innerHTML = '<div style="color:white;padding:12px;text-align:center;">No data at current replay time</div>';
+            }
+            return;
+          }
           // Initialize lap time panel
           lapTimeCurrentSessionRows = sessionData;
           lapTimeYear = year;
