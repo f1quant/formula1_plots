@@ -2754,6 +2754,83 @@
       previousFilteredDataLength = 0;
     }
 
+    // Build cumulative timing segments per driver/lap for gap comparisons
+    // Map<driver, Map<lapNum, { start, s1Cum, s2Cum, end }>>
+    function buildLapSegments(rows) {
+      const segments = new Map();
+      const lastLapEnd = new Map(); // Map<driver, last completed lap end>
+
+      const sorted = Array.isArray(rows) ? rows.slice().sort((a, b) => {
+        const aLap = parseInt(a.lap_LapNumber) || 0;
+        const bLap = parseInt(b.lap_LapNumber) || 0;
+        return aLap - bLap;
+      }) : [];
+
+      const setSegment = (driver, lapNum, updater) => {
+        if (!segments.has(driver)) segments.set(driver, new Map());
+        const driverMap = segments.get(driver);
+        const existing = driverMap.get(lapNum) || {};
+        const updated = updater(existing);
+        driverMap.set(lapNum, updated);
+      };
+
+      sorted.forEach(r => {
+        const driver = String(r.lap_Driver || "").trim();
+        const lapNum = parseInt(r.lap_LapNumber);
+        const lapEnd = parseFloat(r.lap_Time);
+        const lapDuration = parseFloat(r.lap_LapTime);
+        const s1 = parseFloat(r.lap_Sector1Time);
+        const s2 = parseFloat(r.lap_Sector2Time);
+
+        if (!driver || !Number.isFinite(lapNum)) return;
+
+        let start = null;
+        if (Number.isFinite(lapEnd) && Number.isFinite(lapDuration)) {
+          start = lapEnd - lapDuration;
+        } else if (lastLapEnd.has(driver)) {
+          start = lastLapEnd.get(driver);
+        } else if (lapNum === 1) {
+          start = 0;
+        }
+
+        const s1Cum = Number.isFinite(start) && Number.isFinite(s1) ? start + s1 : null;
+        const s2Cum = Number.isFinite(start) && Number.isFinite(s1) && Number.isFinite(s2) ? start + s1 + s2 : null;
+
+        setSegment(driver, lapNum, (prev) => ({
+          start: prev.start ?? start,
+          s1Cum: prev.s1Cum ?? s1Cum,
+          s2Cum: prev.s2Cum ?? s2Cum,
+          end: Number.isFinite(lapEnd) ? lapEnd : (prev.end ?? null)
+        }));
+
+        if (Number.isFinite(lapEnd)) {
+          lastLapEnd.set(driver, lapEnd);
+        }
+      });
+
+      // Add in-progress laps using previous lap end as start
+      timingInProgressLaps.forEach((progress, driver) => {
+        const rawLapNum = parseInt(progress.lapNum);
+        if (!driver || !Number.isFinite(rawLapNum)) return;
+        const lapNum = rawLapNum;
+        const lastEnd = lastLapEnd.get(driver);
+        const start = Number.isFinite(lastEnd) ? lastEnd : (lapNum === 1 ? 0 : null);
+        const s1 = Number.isFinite(progress.s1) ? progress.s1 : null;
+        const s2 = Number.isFinite(progress.s2) ? progress.s2 : null;
+        const s1Cum = Number.isFinite(start) && Number.isFinite(s1) ? start + s1 : null;
+        const s2Cum = Number.isFinite(start) && Number.isFinite(s1) && Number.isFinite(s2) ? start + s1 + s2 : null;
+
+        setSegment(driver, lapNum, (prev) => ({
+          start: prev.start ?? start,
+          s1Cum: prev.s1Cum ?? s1Cum,
+          s2Cum: prev.s2Cum ?? s2Cum,
+          end: prev.end ?? null
+        }));
+      });
+
+      return segments;
+    }
+
     function buildReplayTimeline(rows) {
       replayTimeline = [];
       timingInProgressLaps.clear();
@@ -5072,6 +5149,9 @@
     function calculateTimingGaps(rows, unfilteredData = null, replayTime = null) {
       if (!rows || rows.length === 0) return [];
 
+      // Precompute per-lap cumulative segments for gap comparisons
+      const lapSegments = buildLapSegments(unfilteredData || rows);
+
       // Build a set of drivers who have future laps (only in replay mode)
       const driversWithFutureLaps = new Set();
       if (unfilteredData && replayTime !== null) {
@@ -5133,8 +5213,7 @@
       timingInProgressLaps.forEach((progress, driver) => {
         const rawLapNum = parseInt(progress.lapNum);
         if (!driver || !Number.isFinite(rawLapNum)) return;
-        // Treat in-progress lap 1 as lap 0 so completed lap 1 always sorts ahead
-        const lapNum = rawLapNum === 1 ? 0 : rawLapNum;
+        const lapNum = rawLapNum;
 
         const startTime = Number.isFinite(progress.startTime) ? progress.startTime : null;
         const s1 = Number.isFinite(progress.s1) ? progress.s1 : null;
@@ -5256,23 +5335,32 @@
           d.lapped = 0;
         }
 
-        // If both leader and driver are on the same in-progress lap, adjust gap using sector deltas
+        // Adjust gap for partial laps using per-lap cumulative timings
         const driverProgress = timingInProgressLaps.get(d.driver);
-        const leaderProgress = timingInProgressLaps.get(leader.driver);
-        if (driverProgress && leaderProgress && driverProgress.lapNum === leaderProgress.lapNum) {
-          const baseGap = d.gap;
-          let delta = 0;
-          let hasDelta = false;
-          if (Number.isFinite(driverProgress.s1) && Number.isFinite(leaderProgress.s1)) {
-            delta += driverProgress.s1 - leaderProgress.s1;
-            hasDelta = true;
+        const driverLapForGapRaw = driverProgress ? parseInt(driverProgress.lapNum) : d.lapNum;
+        const driverLapNumActual = driverLapForGapRaw === 0 ? 1 : driverLapForGapRaw;
+        const driverSeg = lapSegments.get(d.driver)?.get(driverLapNumActual);
+        const leaderSeg = lapSegments.get(leader.driver)?.get(driverLapNumActual);
+        if (driverSeg && leaderSeg) {
+          const driverCumS2 = Number.isFinite(driverProgress?.s2) && Number.isFinite(driverSeg.s2Cum) ? driverSeg.s2Cum : null;
+          const driverCumS1 = Number.isFinite(driverProgress?.s1) && Number.isFinite(driverSeg.s1Cum) ? driverSeg.s1Cum : null;
+
+          let driverCum = null;
+          let leaderCum = null;
+
+          if (driverCumS2 !== null && Number.isFinite(leaderSeg.s2Cum)) {
+            driverCum = driverCumS2;
+            leaderCum = leaderSeg.s2Cum;
+          } else if (driverCumS1 !== null && Number.isFinite(leaderSeg.s1Cum)) {
+            driverCum = driverCumS1;
+            leaderCum = leaderSeg.s1Cum;
+          } else if (Number.isFinite(driverSeg.end) && Number.isFinite(leaderSeg.end)) {
+            driverCum = driverSeg.end;
+            leaderCum = leaderSeg.end;
           }
-          if (Number.isFinite(driverProgress.s2) && Number.isFinite(leaderProgress.s2)) {
-            delta += driverProgress.s2 - leaderProgress.s2;
-            hasDelta = true;
-          }
-          if (hasDelta && baseGap !== null && baseGap !== undefined) {
-            d.gap = baseGap + delta;
+
+          if (Number.isFinite(driverCum) && Number.isFinite(leaderCum)) {
+            d.gap = driverCum - leaderCum;
           }
         }
 
