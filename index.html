@@ -4738,13 +4738,8 @@
 
       // Set up mode button
       modeBtn.addEventListener('click', () => {
-        if (replayConfig.enabled) {
-          // If replay mode is active, open replay overlay
-          openReplayOverlay();
-        } else {
-          // Otherwise, open choice modal (or spoiler config if already enabled)
-          openSpoilerOverlay({ forceConfig: false });
-        }
+        // Always open mode choice/config overlay, regardless of current mode
+        openSpoilerOverlay({ forceConfig: false });
       });
 
       // Set up copy permalink button
