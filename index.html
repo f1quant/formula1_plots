@@ -5080,6 +5080,13 @@
           const finishStatus = String(r.finish_status || "").trim();
           // Only show finish status if driver has no future laps
           const shouldShowStatus = driversWithFutureLaps.size === 0 || !driversWithFutureLaps.has(driver);
+          const isPBFlag = (() => {
+            const v = r.lap_IsPersonalBest;
+            if (typeof v === 'boolean') return v;
+            const num = Number(v);
+            if (!Number.isNaN(num)) return num === 1;
+            return String(v || "").trim().toLowerCase() === 'true';
+          })();
 
           driverLatestLap.set(driver, {
             driver,
@@ -5092,7 +5099,7 @@
             sector3: parseFloat(r.lap_Sector3Time),
             tyreCompound: String(r.lap_Compound || "").trim(),
             tyreLife: parseInt(r.lap_TyreLife),
-            isPersonalBest: String(r.lap_IsPersonalBest || "").toLowerCase() === 'true',
+            isPersonalBest: isPBFlag,
             finishStatus: shouldShowStatus ? finishStatus : ''
           });
         }
