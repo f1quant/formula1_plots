@@ -5580,7 +5580,7 @@
           const personalBest = driverPB ? [driverPB.fastestS1, driverPB.fastestS2, driverPB.fastestS3][idx] : null;
 
           html += '<td>';
-          if (sectorTime) {
+          if (!isRetired && sectorTime) {
             const isSessionFastest = sessionBest && Math.abs(sectorTime - sessionBest) < 0.001;
             const isPersonalBest = !isSessionFastest && personalBest && Math.abs(sectorTime - personalBest) < 0.001;
             const colorClass = isSessionFastest ? 'timing-fastest' :
@@ -5594,7 +5594,7 @@
 
         // Tyre
         html += '<td><div class="timing-tyre">';
-        if (d.tyreCompound || d.tyreLife) {
+        if (!isRetired && (d.tyreCompound || d.tyreLife)) {
           const color = d.tyreCompound ? getTimingTireColor(d.tyreCompound) : '#FFFFFF';
           const compound = d.tyreCompound ? d.tyreCompound.charAt(0).toUpperCase() : '';
 
