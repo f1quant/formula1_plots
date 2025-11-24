@@ -2487,7 +2487,7 @@
     let currentSessionDataUnfiltered = null; // Stores session data without replay time filter
     let replayTimeline = []; // Chronological list of lap/sector events for timing replay
     let previousFilteredDataLength = 0; // Tracks filtered lap count for replay updates
-    const timingInProgressLaps = new Map(); // Map<driver, {lapNum, s1, s2, tyre, position}>
+    const timingInProgressLaps = new Map(); // Map<driver, {lapNum, s1, s2, startTime, tyre, position}>
     let rawDataReady = false;
     let spoilerDecisionResolved = false;
     let sessionsInitialized = false;
@@ -2839,6 +2839,7 @@
             lapNum: lapNumber,
             s1: null,
             s2: null,
+            startTime: null,
             tyre: String(event.lapRow?.lap_Compound || "").trim(),
             position: parseInt(event.lapRow?.lap_Position)
           });
@@ -5097,6 +5098,47 @@
         }
       });
 
+      // Incorporate in-progress laps to show provisional gaps (up to completed sectors)
+      timingInProgressLaps.forEach((progress, driver) => {
+        const lapNum = parseInt(progress.lapNum);
+        if (!driver || !Number.isFinite(lapNum)) return;
+
+        const startTime = Number.isFinite(progress.startTime) ? progress.startTime : null;
+        const s1 = Number.isFinite(progress.s1) ? progress.s1 : null;
+        const s2 = Number.isFinite(progress.s2) ? progress.s2 : null;
+
+        // Require at least S1 to compute a provisional cumulative time
+        if (startTime === null || s1 === null) return;
+
+        let provisionalTime = startTime + s1;
+        if (s2 !== null) {
+          provisionalTime += s2;
+        }
+
+        const existing = driverLatestLap.get(driver);
+        const shouldReplace =
+          !existing ||
+          lapNum > existing.lapNum ||
+          (lapNum === existing.lapNum && (!Number.isFinite(existing.lapTime) || provisionalTime < existing.lapTime));
+
+        if (shouldReplace) {
+          driverLatestLap.set(driver, {
+            driver,
+            lapNum,
+            lapTime: provisionalTime,
+            position: progress.position || 0,
+            lapDuration: null,
+            sector1: s1,
+            sector2: s2,
+            sector3: null,
+            tyreCompound: progress.tyre,
+            tyreLife: null,
+            isPersonalBest: false,
+            finishStatus: ''
+          });
+        }
+      });
+
       // Convert to array and find leader
       const drivers = Array.from(driverLatestLap.values());
       if (drivers.length === 0) return [];
@@ -5108,8 +5150,9 @@
       });
 
       const leader = drivers[0];
+      console.log('[TIMING GAP] Leader', leader.driver, 'lap', leader.lapNum, 'time', leader.lapTime);
 
-      // Build a map of leader's lap completions: lap number -> completion time
+      // Build a map of leader's lap completions: lap number -> completion/provisional time
       const leaderLaps = new Map();
       rows.forEach(r => {
         const driver = String(r.lap_Driver || "").trim();
@@ -5121,20 +5164,32 @@
           }
         }
       });
+      // If leader is on an in-progress lap, add a provisional entry so gap calc is consistent
+      if (timingInProgressLaps.has(leader.driver)) {
+        const progress = timingInProgressLaps.get(leader.driver);
+        const lapNum = parseInt(progress.lapNum);
+        const startTime = Number.isFinite(progress.startTime) ? progress.startTime : null;
+        const s1 = Number.isFinite(progress.s1) ? progress.s1 : null;
+        const s2 = Number.isFinite(progress.s2) ? progress.s2 : null;
+        if (Number.isFinite(lapNum) && startTime !== null && s1 !== null) {
+          let provisional = startTime + s1;
+          if (s2 !== null) provisional += s2;
+          const existing = leaderLaps.get(lapNum);
+          if (!Number.isFinite(existing) || provisional < existing) {
+            leaderLaps.set(lapNum, provisional);
+          }
+        }
+      }
+      const maxLeaderLap = leaderLaps.size > 0 ? Math.max(...leaderLaps.keys()) : 0;
+      const leaderLapEntries = Array.from(leaderLaps.entries()).map(([k, v]) => `${k}:${v}`);
+      console.log('[TIMING GAP] Leader laps', leaderLapEntries.join(', '));
 
       // Calculate gaps for each driver
-      drivers.forEach(d => {
-        if (d.driver === leader.driver) {
-          d.gap = null;
-          d.lapped = 0;
-          return;
-        }
-
-        // First lap - can't be lapped
-        if (d.lapNum === 1) {
-          d.gap = d.lapTime - leader.lapTime;
-          d.lapped = 0;
-          return;
+        drivers.forEach(d => {
+          if (d.driver === leader.driver) {
+            d.gap = null;
+            d.lapped = 0;
+            return;
         }
 
         // Find which lap the leader had completed when this driver completed their latest lap
@@ -5157,16 +5212,38 @@
           d.lapped = 0;
         } else {
           // Driver is behind in lap count but not lapped yet
-          // Compare driver's latest lap time with leader's time for the same lap
+          // Compare driver's latest lap time with leader's time for the same lap, if we have it
           const leaderTimeAtSameLap = leaderLaps.get(d.lapNum);
           if (leaderTimeAtSameLap !== undefined) {
             d.gap = d.lapTime - leaderTimeAtSameLap;
           } else {
-            // Fallback if we don't have leader's data for that lap
-            d.gap = d.lapTime - leader.lapTime;
+            // If leader has no reference for this lap (ahead or behind), hold gap
+            d.gap = null;
           }
           d.lapped = 0;
         }
+
+        // If both leader and driver are on the same in-progress lap, adjust gap using sector deltas
+        const driverProgress = timingInProgressLaps.get(d.driver);
+        const leaderProgress = timingInProgressLaps.get(leader.driver);
+        if (driverProgress && leaderProgress && driverProgress.lapNum === leaderProgress.lapNum) {
+          const baseGap = d.gap;
+          let delta = 0;
+          let hasDelta = false;
+          if (Number.isFinite(driverProgress.s1) && Number.isFinite(leaderProgress.s1)) {
+            delta += driverProgress.s1 - leaderProgress.s1;
+            hasDelta = true;
+          }
+          if (Number.isFinite(driverProgress.s2) && Number.isFinite(leaderProgress.s2)) {
+            delta += driverProgress.s2 - leaderProgress.s2;
+            hasDelta = true;
+          }
+          if (hasDelta && baseGap !== null && baseGap !== undefined) {
+            d.gap = baseGap + delta;
+          }
+        }
+
+        console.log('[TIMING GAP] Driver', d.driver, 'lap', d.lapNum, 'lapTime', d.lapTime, 'gap', d.gap, 'leaderLapAtDriverTime', leaderLapAtDriverTime, 'leaderLap', leader.lapNum, 'leaderTime', leader.lapTime, 'leaderTimeAtSameLap', leaderLaps.get(d.lapNum));
       });
 
       return drivers;
