@@ -3221,7 +3221,11 @@
       applyReplayTimeFilter();
       previousFilteredDataLength = currentSessionData ? currentSessionData.length : 0;
 
-      if (currentSessionData && currentSessionData.length >= 0) {
+      // Only initialize if there's actual data or if we have unfiltered data to work with
+      // (e.g., in replay mode at start with no completed laps but sectors available)
+      const hasAnyData = (currentSessionData && currentSessionData.length > 0) ||
+                         (currentSessionDataUnfiltered && currentSessionDataUnfiltered.length > 0);
+      if (hasAnyData) {
         initializePanel(appState.currentActiveTab, currentSessionData);
       }
     }
@@ -3298,6 +3302,11 @@
         sessionData: currentSessionData,
         replayTime
       });
+
+      // Keep combined timing/lap-time visuals in sync when timing tab is active
+      if (appState.currentActiveTab === 'timing') {
+        processLapTimeData(currentSessionData);
+      }
     }
 
     function playReplay() {
@@ -4755,6 +4764,10 @@
 
       // Initialize panel if data is available
       if (currentSessionData) {
+        // Ensure replay filter is applied before initializing
+        if (replayConfig.enabled && currentSessionDataUnfiltered) {
+          applyReplayTimeFilter();
+        }
         initializePanel(tabName, currentSessionData);
       }
     }
@@ -4766,7 +4779,11 @@
       const sessionType = appState.session.sessionType;
       const hasRows = Array.isArray(sessionData) && sessionData.length > 0;
       const initLapTimeSection = () => {
-        if (!hasRows) {
+        // Check both filtered data and unfiltered/in-progress data to determine if section should initialize
+        const hasData = hasRows ||
+                       (currentSessionDataUnfiltered && currentSessionDataUnfiltered.length > 0) ||
+                       (timingInProgressLaps && timingInProgressLaps.size > 0);
+        if (!hasData) {
           if (lapTimeChartInstance) {
             lapTimeChartInstance.clear();
           }
@@ -4780,6 +4797,8 @@
           return;
         }
         // Initialize lap time section
+        // In replay mode with no completed laps yet, sessionData will be empty
+        // Store it anyway and the replay listener will update when laps complete
         lapTimeCurrentSessionRows = sessionData;
         lapTimeYear = year;
         lapTimeRound = round;
@@ -5131,7 +5150,15 @@
       buildReplayTimeline(currentSessionDataUnfiltered);
 
       // Apply replay time filter if active
-      applyReplayTimeFilter();
+      // But only if replay slider has been initialized (has min/max set)
+      // Otherwise initializeReplaySlider() will handle it after setting up the slider
+      const sliderInitialized = replaySlider && replaySlider.min !== '' && replaySlider.max !== '';
+      if (!replayConfig.enabled || sliderInitialized) {
+        applyReplayTimeFilter();
+      } else {
+        // In replay mode but slider not initialized yet - just use unfiltered data for now
+        currentSessionData = currentSessionDataUnfiltered;
+      }
 
       // Clear selected drivers when a new session is selected (unless restoring from permalink)
       if (!window.permalinkSession || !window.permalinkSession.isRestoring) {
@@ -8034,7 +8061,7 @@ function updateSelectedDrivers(mutator, options = {}) {
       if (!sessionData || sessionData.length === 0) {
         lapTimeDriverOrder = [];
         lapTimeCurrentGroups = new Map();
-        lapTimeSelectedDrivers.clear();
+        appState.selectedDrivers.clear();
         buildLapTimeDriversList([]);
         renderLapTimeChart();
         renderLapTimeSummaryTable();
@@ -8046,7 +8073,7 @@ function updateSelectedDrivers(mutator, options = {}) {
 
       if (!rows || rows.length === 0) {
         lapTimeCurrentGroups = new Map();
-        lapTimeSelectedDrivers.clear();
+        appState.selectedDrivers.clear();
         buildLapTimeDriversList([]);
         renderLapTimeChart();
         renderLapTimeSummaryTable();
