@@ -6022,6 +6022,15 @@
 
       const allDrivers = [...activeDrivers, ...retiredDrivers];
 
+      // Assign positions based on sorted table order (active drivers only)
+      activeDrivers.forEach((d, index) => {
+        d.position = index + 1;
+      });
+      // Retired drivers don't get a position
+      retiredDrivers.forEach(d => {
+        d.position = null;
+      });
+
       // Auto-select drivers who appear for the first time in replay mode only
       if (replayConfig.enabled) {
         const currentSelected = new Set(appState.selectedDrivers);
