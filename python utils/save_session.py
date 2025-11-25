@@ -20,7 +20,7 @@ def save_driver_info(races):
                 try:
                     driver_row = session.results[session.results["Abbreviation"] == driver].iloc[0]
                     color = fastf1.plotting.get_driver_style(identifier=driver, style=['color'], session=session)["color"]
-                    colors.append({"year": year, "round_no": round_no, "session_type": session_type, "driver": driver, "color": color, "TeamName": driver_row["TeamName"], "FullName": driver_row["FullName"], "HeadshotUrl": driver_row["HeadshotUrl"]})
+                    colors.append({"year": year, "round_no": round_no, "session_type": session_type, "driver": driver, "number": driver_row["DriverNumber"], "color": color, "TeamName": driver_row["TeamName"], "FullName": driver_row["FullName"], "HeadshotUrl": driver_row["HeadshotUrl"]})
                 except Exception as e:
                     print(f"  Skipping driver {driver}: {e}")
                     continue
@@ -126,13 +126,46 @@ def save_to_all_df(races):
             print(f"Skipping {year} R{round_no}: {e}")
             continue
 
+def save_timing_data(races):
+    for year, round_no, session_type in races:  
+        fn = f"github/timing_data/{year}_{round_no}_{session_type}.csv"
+        try:
+            session = fastf1.get_session(year, round_no, session_type)
+            session.load()
+            timing_data = fastf1.api.timing_data(session.api_path)[1]
+            timing_data = timing_data[(timing_data["Driver"] == "4") & (timing_data["Position"] == 2)]
+            print(timing_data.iloc[0]["Time"])
+            print(timing_data.iloc[0]["Time"].total_seconds())
+            # timing_data["Time"] = timing_data["Time"].dt.total_seconds()
+            # timing_data.to_csv(fn, index=False) 
+            print(f"Saved {fn}")
+        except Exception as e:
+            print(f"Skipped {fn}: {e}")
+            continue
+
+
 my_f1_utils.setup_cache(offline=False)
 races = [(2025,22,"R")]
+
+# all races to reconstruct everything
+# races = []
+# years = list(range(2025,2017,-1))
+# rounds = list(range(26,0,-1))
+# session_types = ["R","S"]
+# for year in years:
+#     for round_no in rounds:
+#         for session_type in session_types:
+#             races.append((year, round_no, session_type))
+
 do_driver_info = True
 do_all_df = True
+do_timing_data = True
 
 if do_driver_info:
     save_driver_info(races)
 
 if do_all_df:
     save_to_all_df(races)
+
+if do_timing_data:
+    save_timing_data(races)
