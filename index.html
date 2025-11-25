@@ -5415,7 +5415,14 @@
       buildReplayTimeline(currentSessionDataUnfiltered);
       timingFeedData = [];
       timingFeedLoaded = false;
-      loadTimingFeedForSession(selectedSeason, round, selectedSession).catch(err => console.warn('Timing feed load failed', err));
+      loadTimingFeedForSession(selectedSeason, round, selectedSession)
+        .then(() => {
+          // After feed is loaded, re-render timing if this session is still current
+          if (appState.currentActiveTab === 'timing' && currentSessionData) {
+            renderTimingTable(currentSessionData, selectedSeason, round, selectedSession, currentSessionDataUnfiltered, null);
+          }
+        })
+        .catch(err => console.warn('Timing feed load failed', err));
 
       // Apply replay time filter if active
       // But only if replay slider has been initialized (has min/max set)
@@ -6098,31 +6105,43 @@
         }
       });
 
-      // Sort drivers by progress (lap > sectors completed) then gap, then position
+      // If timing feed has positions, use that order; otherwise fallback to calculated order
+      const timeCutoff = replayConfig.enabled && Number.isFinite(replayTime) ? replayTime : Infinity;
+      const feedPositions = new Map();
+      if (Array.isArray(timingFeedData)) {
+        timingFeedData.forEach(r => {
+          const t = parseFloat(r.Time ?? r.time ?? r.sessionTime);
+          if (!Number.isFinite(t) || t > timeCutoff) return;
+          const num = r.Driver ?? r.driver;
+          const driver = DriverInfo.getDriverCodeByNumber(num, year, round, sessionType);
+          if (!driver) return;
+          const pos = parseInt(r.Position ?? r.position);
+          const prev = feedPositions.get(driver);
+          if (!prev || t > prev.time) {
+            feedPositions.set(driver, { time: t, pos: Number.isFinite(pos) ? pos : 999 });
+          }
+        });
+      }
+
+      if (feedPositions.size === 0) {
+        container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No timing feed data available</div>';
+        if (trackStatusEl) {
+          trackStatusEl.style.display = 'none';
+          trackStatusEl.classList.remove('status-yellow', 'status-red', 'status-sc', 'status-vsc');
+          trackStatusEl.textContent = '';
+        }
+        return;
+      }
+
       const sortedDrivers = drivers.slice().sort((a, b) => {
-        // Retired/disqualified always after active
-        const aRetired = ['retired', 'disqualified'].includes(String(a.finishStatus || '').toLowerCase());
-        const bRetired = ['retired', 'disqualified'].includes(String(b.finishStatus || '').toLowerCase());
-        if (aRetired !== bRetired) return aRetired ? 1 : -1;
-
-        // Higher lap number first
-        if (a.lapNum !== b.lapNum) return b.lapNum - a.lapNum;
-
-        // More completed sectors on current lap first
-        const aSectors = sectorsCompleted.get(a.driver) || 0;
-        const bSectors = sectorsCompleted.get(b.driver) || 0;
-        if (aSectors !== bSectors) return bSectors - aSectors;
-
-        // Smaller gap first (treat null/undefined as large)
-        const aGap = Number.isFinite(a.gap) ? a.gap : Infinity;
-        const bGap = Number.isFinite(b.gap) ? b.gap : Infinity;
-        if (aGap !== bGap) return aGap - bGap;
-
-        // Fallback: position then driver code
-        const aPos = a.position || 999;
-        const bPos = b.position || 999;
-        if (aPos !== bPos) return aPos - bPos;
-        return String(a.driver).localeCompare(String(b.driver));
+        const pa = feedPositions.get(a.driver)?.pos ?? 999;
+        const pb = feedPositions.get(b.driver)?.pos ?? 999;
+        if (pa !== pb) return pa - pb;
+        return a.driver.localeCompare(b.driver);
+      });
+      sortedDrivers.forEach(d => {
+        const entry = feedPositions.get(d.driver);
+        if (entry) d.position = entry.pos;
       });
 
       // Normalize gaps so the table leader is always gap 0 (helps mid-lap lead changes)
