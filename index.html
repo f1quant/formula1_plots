@@ -8611,9 +8611,14 @@ setupTyreDegFilterModal();
               borderWidth: 2
             },
             emphasis: {
-              focus: 'self',
+              focus: 'none',
+              scale: false,
               lineStyle: { width: 3 },
-              scale: true
+              itemStyle: {
+                color: driverColor,
+                borderColor: driverColor,
+                borderWidth: 2
+              }
             },
             blur: {
               lineStyle: { opacity: 0.25 },
@@ -8811,54 +8816,47 @@ setupTyreDegFilterModal();
       lapTimeChartInstance.off('mouseover');
       lapTimeChartInstance.off('mouseout');
 
-      let currentHoveredDriver = null;
+      const seriesDriverLookup = new Map();
+      lapTimeSeriesIndexByDriver.forEach((indices, driver) => {
+        indices.forEach(idx => seriesDriverLookup.set(idx, driver));
+      });
+
+      const applyDriverHighlight = (driver) => {
+        const driverSeriesIndices = lapTimeSeriesIndexByDriver.get(driver) || [];
+        const updatedSeries = series.map((s, idx) => {
+          if (idx >= driverSeriesCount) return {};
+          const isDriver = driverSeriesIndices.includes(idx);
+          return {
+            lineStyle: { width: isDriver ? 3 : 2, color: s.lineStyle.color, opacity: isDriver ? 1 : 0.15 },
+            itemStyle: { ...s.itemStyle, opacity: isDriver ? 1 : 0.05 },
+            endLabel: s.endLabel ? { ...s.endLabel, opacity: isDriver ? 1 : 0.15 } : undefined
+          };
+        });
+        lapTimeChartInstance.setOption({ series: updatedSeries }, false);
+      };
+
+      const clearDriverHighlight = () => {
+        const resetSeries = series.map((s, idx) => {
+          if (idx >= driverSeriesCount) return {};
+          return {
+            lineStyle: { width: 2, color: s.lineStyle.color, opacity: 1 },
+            itemStyle: { ...s.itemStyle, opacity: 1 },
+            endLabel: s.endLabel ? { ...s.endLabel, opacity: 1 } : undefined
+          };
+        });
+        lapTimeChartInstance.setOption({ series: resetSeries }, false);
+      };
 
       lapTimeChartInstance.on('mouseover', (params) => {
-        if (params.componentType === 'series' && params.seriesType === 'line') {
-          const hoveredDriver = params.seriesName.split(' - ')[0];
-
-          if (currentHoveredDriver === hoveredDriver) return;
-          currentHoveredDriver = hoveredDriver;
-
-          const driverSeriesIndices = lapTimeSeriesIndexByDriver.get(hoveredDriver) || [];
-
-          const updatedSeries = series.map((s, idx) => {
-            if (idx >= driverSeriesCount) return {};
-
-            if (driverSeriesIndices.includes(idx)) {
-              return {
-                lineStyle: { width: 3, color: s.lineStyle.color, opacity: 1 },
-                itemStyle: { ...s.itemStyle, opacity: 1 },
-                endLabel: { ...s.endLabel, opacity: 1 }
-              };
-            } else {
-              return {
-                lineStyle: { width: 2, color: s.lineStyle.color, opacity: 0.15 },
-                itemStyle: { ...s.itemStyle, opacity: 0.05 },
-                endLabel: { ...s.endLabel, opacity: 0.15 }
-              };
-            }
-          });
-
-          lapTimeChartInstance.setOption({ series: updatedSeries });
-        }
+        if (params.componentType !== 'series' || params.seriesType !== 'line') return;
+        const driver = seriesDriverLookup.get(params.seriesIndex);
+        if (!driver) return;
+        applyDriverHighlight(driver);
       });
 
       lapTimeChartInstance.on('mouseout', (params) => {
-        if (params.componentType === 'series' && params.seriesType === 'line') {
-          currentHoveredDriver = null;
-
-          const resetSeries = series.map((s, idx) => {
-            if (idx >= driverSeriesCount) return {};
-            return {
-              lineStyle: { width: 2, color: s.lineStyle.color, opacity: 1 },
-              itemStyle: { ...s.itemStyle, opacity: 1 },
-              endLabel: { ...s.endLabel, opacity: 1 }
-            };
-          });
-
-          lapTimeChartInstance.setOption({ series: resetSeries });
-        }
+        if (params.componentType !== 'series' || params.seriesType !== 'line') return;
+        clearDriverHighlight();
       });
     }
 
