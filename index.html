@@ -8616,8 +8616,8 @@ setupTyreDegFilterModal();
               scale: true
             },
             blur: {
-              lineStyle: { opacity: 0.05 },
-              itemStyle: { opacity: 0.05 }
+              lineStyle: { opacity: 0.25 },
+              itemStyle: { opacity: 0.25 }
             },
             endLabel: {
               show: isLastStint,
@@ -8865,41 +8865,44 @@ setupTyreDegFilterModal();
     function highlightDriverOnLapTimeChart(driver) {
       if (!lapTimeChartInstance || !lapTimeSeriesIndexByDriver.has(driver)) return;
 
-      // Get all series indices for this driver
-      const driverSeriesIndices = lapTimeSeriesIndexByDriver.get(driver);
+      const option = lapTimeChartInstance.getOption();
+      const driverSeriesIndices = new Set(lapTimeSeriesIndexByDriver.get(driver) || []);
 
-      // Highlight this driver's series
-      driverSeriesIndices.forEach(seriesIndex => {
-        lapTimeChartInstance.dispatchAction({
-          type: 'highlight',
-          seriesIndex: seriesIndex
-        });
+      // Update all series to blur non-highlighted drivers
+      const updatedSeries = option.series.map((series, index) => {
+        if (driverSeriesIndices.has(index)) {
+          // Emphasized series - make it stand out
+          return {
+            lineStyle: { opacity: 1, width: 3 },
+            itemStyle: { opacity: 1 }
+          };
+        } else {
+          // Blurred series
+          return {
+            lineStyle: { opacity: 0.25 },
+            itemStyle: { opacity: 0.25 }
+          };
+        }
       });
 
-      // Blur all other series
-      lapTimeSeriesIndexByDriver.forEach((seriesIndices, otherDriver) => {
-        if (otherDriver !== driver) {
-          seriesIndices.forEach(seriesIndex => {
-            lapTimeChartInstance.dispatchAction({
-              type: 'downplay',
-              seriesIndex: seriesIndex
-            });
-          });
-        }
+      lapTimeChartInstance.setOption({
+        series: updatedSeries
       });
     }
 
     function clearLapTimeChartHighlight() {
       if (!lapTimeChartInstance) return;
 
-      // Restore all series to normal state
-      lapTimeSeriesIndexByDriver.forEach((seriesIndices) => {
-        seriesIndices.forEach(seriesIndex => {
-          lapTimeChartInstance.dispatchAction({
-            type: 'downplay',
-            seriesIndex: seriesIndex
-          });
-        });
+      const option = lapTimeChartInstance.getOption();
+
+      // Restore all series to normal state (full opacity, normal width)
+      const updatedSeries = option.series.map(() => ({
+        lineStyle: { opacity: 1, width: 2 },
+        itemStyle: { opacity: 1 }
+      }));
+
+      lapTimeChartInstance.setOption({
+        series: updatedSeries
       });
     }
 
