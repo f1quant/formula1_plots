@@ -6031,6 +6031,11 @@
       }
 
       if (drivers.length === 0) {
+        if (trackStatusEl) {
+          trackStatusEl.style.display = 'none';
+          trackStatusEl.classList.remove('status-yellow', 'status-red', 'status-sc', 'status-vsc');
+          trackStatusEl.textContent = '';
+        }
         container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No timing data available</div>';
         return;
       }
