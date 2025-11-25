@@ -6121,7 +6121,7 @@
 
       const gapMode = appState.timingGapMode === 'interval' ? 'interval' : 'leader';
 
-      // Track status banner (replay only, from leader's last completed lap)
+      // Track status banner (replay only)
       if (trackStatusEl) {
         trackStatusEl.style.display = 'none';
         trackStatusEl.classList.remove('status-yellow', 'status-red', 'status-sc', 'status-vsc');
@@ -6132,23 +6132,46 @@
           let latestLap = -1;
           let latestStatus = '';
 
+          // Track latest lap/status per driver to detect yellow flags anywhere
+          const latestStatusByDriver = new Map();
+
           sessionData.forEach(r => {
             const driver = String(r.lap_Driver || '').trim();
-            if (driver !== leaderDriver) return;
             const lapNum = parseInt(r.lap_LapNumber);
             if (!Number.isFinite(lapNum)) return;
-            if (lapNum > latestLap) {
+
+            // Track leader
+            if (driver === leaderDriver && lapNum > latestLap) {
               latestLap = lapNum;
               latestStatus = String(r.lap_TrackStatus || '').trim();
             }
+
+            // Track latest per driver for yellow detection
+            const prevLap = latestStatusByDriver.get(driver)?.lap || -1;
+            if (lapNum > prevLap) {
+              latestStatusByDriver.set(driver, {
+                lap: lapNum,
+                status: String(r.lap_TrackStatus || '').trim()
+              });
+            }
           });
+
+          // Any driver with yellow on a lap within 1 of leader's latest completed lap?
+          let anyYellow = false;
+          if (latestLap >= 1) {
+            latestStatusByDriver.forEach(({ status, lap }) => {
+              if (lap >= latestLap - 1 && status.includes('2')) {
+                anyYellow = true;
+              }
+            });
+          }
 
           const statusInfo = (() => {
             if (!latestStatus) return null;
             if (latestStatus.includes('5')) return { cls: 'status-red', text: 'Red Flag' };
             if (latestStatus.includes('4')) return { cls: 'status-sc', text: 'Safety Car' };
             if (latestStatus.includes('6') || latestStatus.includes('7')) return { cls: 'status-vsc', text: 'VSC' };
-            if (latestStatus.includes('2')) return { cls: 'status-yellow', text: 'Yellow Flag' };
+            if (latestStatus.includes('2') || anyYellow) return { cls: 'status-yellow', text: 'Yellow Flag' };
             return null;
           })();
 
