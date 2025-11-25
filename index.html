@@ -322,6 +322,12 @@
       background: #222;
     }
 
+    .timing-table tbody tr:hover {
+      background: rgba(0, 224, 255, 0.15) !important;
+      cursor: pointer;
+      transition: background 0.1s ease;
+    }
+
     .timing-table td {
       padding: 4px 6px;
       text-align: center;
@@ -6066,7 +6072,7 @@
         const isRetired = retiredDrivers.includes(d);
         const driverColor = driverColors.get(d.driver) || '#888888';
 
-        html += '<tr>';
+        html += `<tr data-driver="${d.driver}">`;
 
         // Position
         html += '<td class="timing-position">';
@@ -6195,6 +6201,20 @@
         // Set initial state
         updateTimingSelectAllCheckbox(allDrivers);
       }
+
+      // Add hover interaction with lap time chart
+      const tableRows = container.querySelectorAll('tbody tr[data-driver]');
+      tableRows.forEach(row => {
+        const driver = row.getAttribute('data-driver');
+
+        row.addEventListener('mouseenter', () => {
+          highlightDriverOnLapTimeChart(driver);
+        });
+
+        row.addEventListener('mouseleave', () => {
+          clearLapTimeChartHighlight();
+        });
+      });
     }
 
     function updateTimingSelectAllCheckbox(allDrivers) {
@@ -7634,6 +7654,7 @@ function updateSelectedDrivers(mutator, options = {}) {
     let lapTimeRound = '';
     let lapTimeSessionType = '';
     let lapTimeDriverOrder = []; // Stores finishing order from unfiltered data
+    let lapTimeSeriesIndexByDriver = new Map(); // Maps driver code to array of series indices
 
     const CIRCUIT_CONFIG_FILE = 'strat_calc_config.json';
     const CircuitConfig = {
@@ -8529,7 +8550,7 @@ setupTyreDegFilterModal();
       };
 
       const series = [];
-      const seriesIndexByDriver = new Map();
+      lapTimeSeriesIndexByDriver.clear(); // Reset for this render
       let seriesIdx = 0;
 
       lapTimeCurrentGroups.forEach((stints, driver) => {
@@ -8570,10 +8591,10 @@ setupTyreDegFilterModal();
           const compoundColor = getF1TireColor(compound);
           const driverColor = lapTimeDriverColors.get(driver) || '#888888';
 
-          if (!seriesIndexByDriver.has(driver)) {
-            seriesIndexByDriver.set(driver, []);
+          if (!lapTimeSeriesIndexByDriver.has(driver)) {
+            lapTimeSeriesIndexByDriver.set(driver, []);
           }
-          seriesIndexByDriver.get(driver).push(seriesIdx);
+          lapTimeSeriesIndexByDriver.get(driver).push(seriesIdx);
 
           series.push({
             name: `${driver} - Stint ${stintNumber}`,
@@ -8590,7 +8611,7 @@ setupTyreDegFilterModal();
               borderWidth: 2
             },
             emphasis: {
-              focus: 'none',
+              focus: 'self',
               lineStyle: { width: 3 },
               scale: true
             },
@@ -8838,6 +8859,47 @@ setupTyreDegFilterModal();
 
           lapTimeChartInstance.setOption({ series: resetSeries });
         }
+      });
+    }
+
+    function highlightDriverOnLapTimeChart(driver) {
+      if (!lapTimeChartInstance || !lapTimeSeriesIndexByDriver.has(driver)) return;
+
+      // Get all series indices for this driver
+      const driverSeriesIndices = lapTimeSeriesIndexByDriver.get(driver);
+
+      // Highlight this driver's series
+      driverSeriesIndices.forEach(seriesIndex => {
+        lapTimeChartInstance.dispatchAction({
+          type: 'highlight',
+          seriesIndex: seriesIndex
+        });
+      });
+
+      // Blur all other series
+      lapTimeSeriesIndexByDriver.forEach((seriesIndices, otherDriver) => {
+        if (otherDriver !== driver) {
+          seriesIndices.forEach(seriesIndex => {
+            lapTimeChartInstance.dispatchAction({
+              type: 'downplay',
+              seriesIndex: seriesIndex
+            });
+          });
+        }
+      });
+    }
+
+    function clearLapTimeChartHighlight() {
+      if (!lapTimeChartInstance) return;
+
+      // Restore all series to normal state
+      lapTimeSeriesIndexByDriver.forEach((seriesIndices) => {
+        seriesIndices.forEach(seriesIndex => {
+          lapTimeChartInstance.dispatchAction({
+            type: 'downplay',
+            seriesIndex: seriesIndex
+          });
+        });
       });
     }
 
