@@ -1031,27 +1031,26 @@
       background: rgba(6, 8, 12, 0.9);
       backdrop-filter: blur(4px);
       display: none;
-      align-items: center;
-      justify-content: center;
       z-index: 9999;
-      padding: 16px;
     }
 
     .lap-time-filter-overlay.show {
-      display: flex;
-      align-items: flex-start;
+      display: block;
     }
 
     .lap-time-filter-modal {
-      width: min(720px, 100%);
-      max-height: 90vh;
+      position: fixed;
+      top: 10vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(720px, calc(100vw - 32px));
+      max-height: calc(100vh - 20vh);
       overflow-y: auto;
       background: rgba(22, 26, 35, 0.95);
       border: 1px solid var(--border-color);
       border-radius: 16px;
       padding: 20px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-      margin-top: 40px;
     }
 
     .lap-time-filter-modal-header {
@@ -7717,6 +7716,16 @@ function updateSelectedDrivers(mutator, options = {}) {
         if (filterOverlay) {
           filterOverlay.classList.add('show');
           document.body.style.overflow = 'hidden';
+
+          // Adjust modal position based on scroll
+          const modal = filterOverlay.querySelector('.lap-time-filter-modal');
+          if (modal) {
+            const scrollY = window.scrollY || window.pageYOffset;
+            const viewportHeight = window.innerHeight;
+            // Position at 10vh from current viewport top, or 50px from scroll position, whichever is greater
+            const topPosition = Math.max(scrollY + viewportHeight * 0.1, scrollY + 50);
+            modal.style.top = topPosition + 'px';
+          }
         }
       };
 
