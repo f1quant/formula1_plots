@@ -3496,11 +3496,6 @@
         sessionData: currentSessionData,
         replayTime
       });
-
-      // Keep combined timing/lap-time visuals in sync when timing tab is active
-      if (appState.currentActiveTab === 'timing') {
-        processLapTimeData(currentSessionData);
-      }
     }
 
     function playReplay() {
