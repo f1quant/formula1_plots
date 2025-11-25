@@ -5041,6 +5041,8 @@
       const sessionType = appState.session.sessionType;
       const hasRows = Array.isArray(sessionData) && sessionData.length > 0;
       const initLapTimeSection = () => {
+        // Ensure scheduled laps is set from unfiltered data if available
+        ensureLapTimeScheduledLaps();
         // Check both filtered data and unfiltered/in-progress data to determine if section should initialize
         const hasData = hasRows ||
                        (currentSessionDataUnfiltered && currentSessionDataUnfiltered.length > 0) ||
@@ -7855,6 +7857,18 @@ function updateSelectedDrivers(mutator, options = {}) {
     let lapTimeSessionType = '';
     let lapTimeDriverOrder = []; // Stores finishing order from unfiltered data
     let lapTimeSeriesIndexByDriver = new Map(); // Maps driver code to array of series indices
+    function ensureLapTimeScheduledLaps() {
+      if (Number.isFinite(lapTimeScheduledLaps)) return;
+      const source = (currentSessionDataUnfiltered && currentSessionDataUnfiltered.length > 0)
+        ? currentSessionDataUnfiltered[0]
+        : (lapTimeCurrentSessionRows && lapTimeCurrentSessionRows.length > 0 ? lapTimeCurrentSessionRows[0] : null);
+      if (source) {
+        const sched = parseInt(source.sched_laps);
+        if (!isNaN(sched)) {
+          lapTimeScheduledLaps = sched;
+        }
+      }
+    }
 
     const CIRCUIT_CONFIG_FILE = 'strat_calc_config.json';
     const CircuitConfig = {
@@ -8733,6 +8747,8 @@ setupTyreDegFilterModal();
       if (!lapTimeChartInstance) {
         lapTimeChartInstance = echarts.init(lapTimeChart);
       }
+
+      ensureLapTimeScheduledLaps();
 
       const fuelAdjusted = appState.lapTime.fuelAdjust;
       const tyreLifeAdjusted = appState.lapTime.tyreLifeAdjust;
