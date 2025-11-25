@@ -253,14 +253,37 @@
 
     #timing-panel {
       padding: 16px;
-      max-width: 900px;
-      margin: 0 auto;
+    }
+
+    .timing-combined {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .timing-left {
+      min-width: 0;
+    }
+
+    .timing-right {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 400px;
+    }
+
+    .timing-chart-row {
+      display: block;
+    }
+
+    #lapTimeSummaryTableContainer {
+      margin-top: 16px;
     }
 
     .timing-table {
       width: auto;
-      max-width: 100%;
-      margin: 0 auto;
+      margin: 0;
       border-collapse: collapse;
       font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
       background: #1a1a1a;
@@ -309,21 +332,23 @@
 
     /* Fixed column widths to avoid shifting */
     .timing-table th:nth-child(1),
-    .timing-table td:nth-child(1) { width: 40px; }
+    .timing-table td:nth-child(1) { width: 30px; }
     .timing-table th:nth-child(2),
-    .timing-table td:nth-child(2) { width: 55px; }
+    .timing-table td:nth-child(2) { width: 30px; }
     .timing-table th:nth-child(3),
-    .timing-table td:nth-child(3) { width: 100px; }
+    .timing-table td:nth-child(3) { width: 50px; }
     .timing-table th:nth-child(4),
-    .timing-table td:nth-child(4) { width: 100px; }
+    .timing-table td:nth-child(4) { width: 70px; }
     .timing-table th:nth-child(5),
-    .timing-table td:nth-child(5),
+    .timing-table td:nth-child(5) { width: 60px; }
     .timing-table th:nth-child(6),
     .timing-table td:nth-child(6),
     .timing-table th:nth-child(7),
-    .timing-table td:nth-child(7) { width: 100px; }
+    .timing-table td:nth-child(7),
     .timing-table th:nth-child(8),
-    .timing-table td:nth-child(8) { width: 100px; }
+    .timing-table td:nth-child(8) { width: 60px; }
+    .timing-table th:nth-child(9),
+    .timing-table td:nth-child(9) { width: 55px; }
 
     .timing-position {
       color: white;
@@ -331,6 +356,16 @@
       text-align: left !important;
       width: 30px;
       font-size: 13px;
+    }
+
+    .timing-select {
+      text-align: center;
+    }
+
+    .timing-select input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
     }
 
     .timing-driver {
@@ -732,7 +767,6 @@
     .lap-time-controls {
       display: flex;
       gap: 8px;
-      margin-bottom: 8px;
       align-items: center;
       justify-content: space-between;
     }
@@ -748,8 +782,8 @@
 
     .lap-time-analysis-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px;
     }
 
     .toggle-button {
@@ -929,7 +963,6 @@
       color: var(--muted-color);
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      white-space: nowrap;
     }
 
     .filter-item input[type="number"] {
@@ -2057,7 +2090,6 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
       <button class="tab-button active" data-tab="timing">Timing</button>
-      <button class="tab-button" data-tab="lap-time" data-tooltip="Shows fuel- and tyre-corrected lap times for each driver by compound. See table at the bottom. 'Copy Averages To Calculator' to apply to other tab.">Lap Time</button>
       <button class="tab-button" data-tab="race-trace">Trace</button>
       <button class="tab-button" data-tab="strategy">Strategy</button>
       <button class="tab-button" data-tab="fuel-effect" data-tooltip="Compares laps for the same (driver, compound, tyre life) at different fuel loads. 'Select Fuel Effect' to apply to other tabs.">Fuel Effect</button>
@@ -2105,56 +2137,13 @@
       </div>
     </div>
 
-    <!-- Strategy Panel -->
     <!-- Timing Panel -->
-    <div id="timing-panel" class="content-panel">
-      <div id="timingTableContainer"></div>
-    </div>
-
-    <div id="strategy-panel" class="content-panel active">
-      <div id="strategyContainer" class="strategy-container">
-        <div class="lap-axis top">
-          <div class="lap-axis-spacer"></div>
-          <div class="lap-axis-track" id="lapAxisTop"></div>
+    <div id="timing-panel" class="content-panel active">
+      <div class="timing-combined">
+        <div class="timing-left">
+          <div id="timingTableContainer"></div>
         </div>
-        <div id="strategyChart"></div>
-        <div class="lap-axis bottom">
-          <div class="lap-axis-spacer"></div>
-          <div class="lap-axis-track" id="lapAxisBottom"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Race Trace Panel -->
-    <div id="race-trace-panel" class="content-panel">
-      <div class="race-trace-controls-row">
-        <div class="race-trace-controls-box">
-          <label class="small" for="raceTraceLapMin">Lap min</label>
-          <input id="raceTraceLapMin" type="number" min="1" step="1" value="1" title="Min lap" />
-          <label class="small" for="raceTraceLapMax">Lap max</label>
-          <input id="raceTraceLapMax" type="number" min="1" step="1" value="1" title="Max lap" />
-        </div>
-      </div>
-
-      <div class="race-trace-layout">
-        <aside class="race-trace-sidebar">
-          <div id="raceTraceDriverList" aria-label="Driver list"></div>
-        </aside>
-        <main id="raceTraceChart">
-          <div class="race-trace-debug-info" id="raceTraceDebugInfo">
-            Waiting for data...
-          </div>
-        </main>
-      </div>
-    </div>
-
-    <!-- Lap Time Panel -->
-    <div id="lap-time-panel" class="content-panel">
-      <div class="lap-time-layout">
-        <div class="lap-time-sidebar">
-          <div id="lapTimeDriversList"></div>
-        </div>
-        <div class="lap-time-chart-wrapper">
+        <div class="timing-right">
           <div class="lap-time-controls">
             <div class="lap-time-controls-left">
               <button id="fuelAdjustToggle" class="toggle-button active">Fuel Adjusted</button>
@@ -2167,6 +2156,11 @@
               <button id="copyLapTimeDataBtn" class="copy-data-button" data-tooltip="Copy data" aria-label="Copy data">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v16h14c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 18H8V7h11v16z"/></svg>
               </button>
+            </div>
+          </div>
+          <div class="timing-chart-row">
+            <div class="lap-time-chart-wrapper">
+              <div id="lapTimeChart"></div>
             </div>
           </div>
           <div class="lap-time-analysis filter-panel">
@@ -2202,12 +2196,47 @@
               </div>
             </div>
           </div>
-          <div id="lapTimeChart"></div>
+        </div>
+      </div>
+      <div id="lapTimeSummaryTableContainer"></div>
+    </div>
+
+    <!-- Strategy Panel -->
+    <div id="strategy-panel" class="content-panel">
+      <div id="strategyContainer" class="strategy-container">
+        <div class="lap-axis top">
+          <div class="lap-axis-spacer"></div>
+          <div class="lap-axis-track" id="lapAxisTop"></div>
+        </div>
+        <div id="strategyChart"></div>
+        <div class="lap-axis bottom">
+          <div class="lap-axis-spacer"></div>
+          <div class="lap-axis-track" id="lapAxisBottom"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Race Trace Panel -->
+    <div id="race-trace-panel" class="content-panel">
+      <div class="race-trace-controls-row">
+        <div class="race-trace-controls-box">
+          <label class="small" for="raceTraceLapMin">Lap min</label>
+          <input id="raceTraceLapMin" type="number" min="1" step="1" value="1" title="Min lap" />
+          <label class="small" for="raceTraceLapMax">Lap max</label>
+          <input id="raceTraceLapMax" type="number" min="1" step="1" value="1" title="Max lap" />
         </div>
       </div>
 
-      <!-- BOTTOM: Summary Table -->
-      <div id="lapTimeSummaryTableContainer"></div>
+      <div class="race-trace-layout">
+        <aside class="race-trace-sidebar">
+          <div id="raceTraceDriverList" aria-label="Driver list"></div>
+        </aside>
+        <main id="raceTraceChart">
+          <div class="race-trace-debug-info" id="raceTraceDebugInfo">
+            Waiting for data...
+          </div>
+        </main>
+      </div>
     </div>
 
     <!-- Lap Time Filters Modal -->
@@ -4613,7 +4642,8 @@
       let selectionChanged = false;
       switch(panelName) {
         case 'race-trace':
-        case 'lap-time': {
+        case 'lap-time':
+        case 'timing': {
           const savedDriversArray = Array.from(appState.selectedDrivers);
           const availableDrivers = panelName === 'race-trace'
             ? Object.keys(raceTraceDriverLines)
@@ -4683,7 +4713,7 @@
           break;
       }
 
-      if ((panelName === 'race-trace' || panelName === 'lap-time') && selectionChanged) {
+      if ((panelName === 'race-trace' || panelName === 'lap-time' || panelName === 'timing') && selectionChanged) {
         refreshDriverSelectionUI();
       }
     }
@@ -4704,6 +4734,8 @@
     }
 
     function switchTab(tabName) {
+      // Map deprecated lap-time tab to timing
+      if (tabName === 'lap-time') tabName = 'timing';
       // Update tab buttons
       document.querySelectorAll('.tab-button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabName);
@@ -4734,6 +4766,37 @@
       const [round, meeting] = appState.session.gp.split('||');
       const sessionType = appState.session.sessionType;
       const hasRows = Array.isArray(sessionData) && sessionData.length > 0;
+      const initLapTimeSection = () => {
+        if (!hasRows) {
+          if (lapTimeChartInstance) {
+            lapTimeChartInstance.clear();
+          }
+          if (lapTimeChart) {
+            lapTimeChart.innerHTML = '<div style="color:white;padding:12px;text-align:center;">No data at current replay time</div>';
+          }
+          const summary = document.getElementById('lapTimeSummaryTableContainer');
+          if (summary) {
+            summary.innerHTML = '<div style="color:white;padding:12px;text-align:center;">No data at current replay time</div>';
+          }
+          return;
+        }
+        // Initialize lap time section
+        lapTimeCurrentSessionRows = sessionData;
+        lapTimeYear = year;
+        lapTimeRound = round;
+        lapTimeSessionType = sessionType;
+        lapTimeDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
+        lapTimeScheduledLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : null;
+        if (isNaN(lapTimeScheduledLaps)) {
+          lapTimeScheduledLaps = null;
+        }
+
+        renderSharedFiltersFromState();
+        renderLapTimeToggleInputsFromState();
+
+        processLapTimeData(sessionData);
+        setupLapTimeReplayListener();
+      };
 
       switch(panelName) {
         case 'timing':
@@ -4743,6 +4806,8 @@
           renderTimingTable(sessionData, year, round, sessionType, timingUnfilteredData, timingReplayTime);
           // Subscribe to replay events for timing table
           setupTimingReplayListener();
+          // Also initialize lap-time visuals within timing tab
+          initLapTimeSection();
           break;
         case 'strategy':
           renderStrategyChart(sessionData, year, round, sessionType);
@@ -4788,36 +4853,7 @@
           setupRaceTraceReplayListener();
           break;
         case 'lap-time':
-          if (!hasRows) {
-            if (lapTimeChartInstance) {
-              lapTimeChartInstance.clear();
-            }
-            if (lapTimeChart) {
-              lapTimeChart.innerHTML = '<div style="color:white;padding:12px;text-align:center;">No data at current replay time</div>';
-            }
-            return;
-          }
-          // Initialize lap time panel
-          lapTimeCurrentSessionRows = sessionData;
-          lapTimeYear = year;
-          lapTimeRound = round;
-          lapTimeSessionType = sessionType;
-          lapTimeDriverColors = DriverInfo.getDriverColors(year, round, sessionType);
-          lapTimeScheduledLaps = sessionData.length > 0 ? parseInt(sessionData[0].sched_laps) : null;
-          if (isNaN(lapTimeScheduledLaps)) {
-            lapTimeScheduledLaps = null;
-          }
-
-          // Circuit config is now applied once per session in onSessionChange()
-
-          // Update filter UI from appState
-          renderSharedFiltersFromState();
-          renderLapTimeToggleInputsFromState();
-
-          // Process lap time data with shared filters
-          processLapTimeData(sessionData);
-          // Subscribe to replay events for lap time charts
-          setupLapTimeReplayListener();
+          initLapTimeSection();
           break;
         case 'tyre-deg':
           // Initialize tyre deg panel
@@ -5218,8 +5254,8 @@
       if (lapTimeListenerSetup) return; // Already subscribed
 
       const listener = (eventData) => {
-        // Only update if lap-time panel is active (optimization)
-        if (appState.currentActiveTab !== 'lap-time') return;
+        // Only update if lap-time features are visible (timing or lap-time tab)
+        if (appState.currentActiveTab !== 'lap-time' && appState.currentActiveTab !== 'timing') return;
 
         // Process lap time data which will render chart and summary table
         processLapTimeData(eventData.sessionData);
@@ -5772,6 +5808,7 @@
       // Build HTML
       let html = '<table class="timing-table"><thead><tr>';
       html += '<th>POSITION</th>';
+      html += '<th>SEL</th>';
       html += '<th style="text-align: left;">DRIVER</th>';
       html += '<th>LAP TIME</th>';
       html += '<th>GAP</th>';
@@ -5793,6 +5830,10 @@
           html += d.position;
         }
         html += '</td>';
+
+        // Selection checkbox
+        const isSelected = appState.selectedDrivers.has(d.driver);
+        html += `<td class="timing-select"><input type="checkbox" data-driver="${d.driver}" ${isSelected ? 'checked' : ''}></td>`;
 
         // Driver with color strip
         html += '<td class="timing-driver"><div class="timing-driver">';
@@ -5875,6 +5916,21 @@
 
       html += '</tbody></table>';
       container.innerHTML = html;
+
+      // Wire up selection checkboxes
+      const checkboxes = container.querySelectorAll('.timing-select input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const driver = e.target.dataset.driver;
+          updateSelectedDrivers(set => {
+            if (e.target.checked) {
+              set.add(driver);
+            } else {
+              set.delete(driver);
+            }
+          });
+        });
+      });
     }
 
     // Set up replay listener for timing tab
@@ -6137,15 +6193,18 @@ function refreshDriverSelectionUI() {
   if (Object.keys(raceTraceDriverLines).length > 0) {
     buildRaceTraceDriverList();
   }
-  if (lapTimeAvailableDrivers.length > 0) {
-    buildLapTimeDriversList();
-  }
+  // timing/lap time selections now reflected via timing table checkboxes and charts
   if (Object.keys(raceTraceDriverLines).length > 0) {
     renderRaceTraceChart();
   }
   if (lapTimeCurrentGroups.size > 0) {
     renderLapTimeChart();
     renderLapTimeSummaryTable();
+  }
+  if (appState.currentActiveTab === 'timing' && currentSessionData) {
+    const timingUnfilteredData = replayConfig.enabled ? currentSessionDataUnfiltered : null;
+    const timingReplayTime = replayConfig.enabled ? parseFloat(replaySlider.value) : null;
+    renderTimingTable(currentSessionData, appState.session.season, appState.session.gp.split('||')[0], appState.session.sessionType, timingUnfilteredData, timingReplayTime);
   }
 }
 
