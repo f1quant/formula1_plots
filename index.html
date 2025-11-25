@@ -7993,12 +7993,23 @@ function setupFuelEffectFilterModal() {
         }
       };
 
-      const openModal = () => {
-        if (filterOverlay) {
-          filterOverlay.classList.add('show');
-          document.body.style.overflow = 'hidden';
-        }
-      };
+  const openModal = () => {
+    if (filterOverlay) {
+      filterOverlay.classList.add('show');
+      document.body.style.overflow = 'hidden';
+
+      // Adjust modal position based on current scroll, similar to timing tab
+      const modal = filterOverlay.querySelector('.fuel-filter-modal');
+      if (modal) {
+        const scrollY = window.scrollY || window.pageYOffset;
+        const viewportHeight = window.innerHeight;
+        const topPosition = Math.max(scrollY + viewportHeight * 0.1, scrollY + 50);
+        modal.style.position = 'absolute';
+        modal.style.top = `${topPosition}px`;
+        modal.style.marginTop = '0';
+      }
+    }
+  };
 
       if (filterBtn) {
         filterBtn.addEventListener('click', openModal);
@@ -8034,6 +8045,17 @@ function setupTyreDegFilterModal() {
     if (filterOverlay) {
       filterOverlay.classList.add('show');
       document.body.style.overflow = 'hidden';
+
+      // Adjust modal position based on current scroll, similar to timing tab
+      const modal = filterOverlay.querySelector('.tyre-filter-modal');
+      if (modal) {
+        const scrollY = window.scrollY || window.pageYOffset;
+        const viewportHeight = window.innerHeight;
+        const topPosition = Math.max(scrollY + viewportHeight * 0.1, scrollY + 50);
+        modal.style.position = 'absolute';
+        modal.style.top = `${topPosition}px`;
+        modal.style.marginTop = '0';
+      }
     }
   };
 
