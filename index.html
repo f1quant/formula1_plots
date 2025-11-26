@@ -6078,7 +6078,7 @@
           trackStatusEl.classList.remove('status-yellow', 'status-red', 'status-sc', 'status-vsc');
           trackStatusEl.textContent = '';
         }
-        container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No timing data available</div>';
+        container.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Press play to start the race. Timing data begins streaming once P1 completes sector 2.</div>';
         return;
       }
 
@@ -10702,7 +10702,8 @@ setupTyreDegFilterModal();
           textStyle: { color: '#e8e8e8' },
           formatter: (p) => {
             const data = p.data;
-            const stintNum = data.stintKey ? data.stintKey.split('||')[5] : 'N/A';
+            const stintRaw = data.stintKey ? data.stintKey.split('||')[5] : null;
+            const stintNum = Number.isFinite(parseInt(stintRaw, 10)) ? parseInt(stintRaw, 10) : (stintRaw || 'N/A');
             return `
               <strong>${data.driver}</strong><br/>
               Stint: ${stintNum}<br/>
