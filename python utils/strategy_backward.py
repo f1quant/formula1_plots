@@ -92,7 +92,7 @@ class PatternUnlessSCTyreRule:
         else:
             return idx == self.length
 
-def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule):
+def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule, max_age):
     sc_prob = {lap: get_sc_prob(lap, sc_prob_ranges) for lap in range(1, num_laps + 1)}
     dp_exp = {}
     policy = {}
@@ -102,7 +102,8 @@ def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, 
         for meta, meta_compounds in rule.all_meta():
             for comp_idx in meta_compounds:
                 for sc_status in [0,1]: # 1 represents that SC has just started
-                    for age in range(0, lap):
+                    age_cap = min(lap - 1, max_age)
+                    for age in range(0, age_cap + 1):
                         state = (lap, comp_idx, age, sc_status, meta)
 
                         # Terminal (beyond last lap)
@@ -118,7 +119,9 @@ def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, 
 
                         if sc_status == 1:
                             # Safety Car: no lap time cost, free pit on the first SC lap, then couunt down sc_length-1 laps
-                            options = [(comp_idx, age, ("stay",), meta, 0)]
+                            options = []
+                            if age < max_age:
+                                options.append((comp_idx, age, ("stay",), meta, 0))
                             for new_c in rule.new_compounds_allowed(meta):
                                 options.append((new_c, 0, ("pit", new_c), rule.next_meta_on_pit(meta, new_c), 0)) # pit_loss is zero
 
@@ -133,12 +136,15 @@ def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, 
 
                         else:
                             # Green-flag lap
-                            options = [(comp_idx, age, ("stay",), meta, 0)]
+                            options = []
+                            if age < max_age:
+                                options.append((comp_idx, age, ("stay",), meta, 0))
                             for new_c in rule.new_compounds_allowed(meta):
                                 options.append((new_c, 0, ("pit", new_c), rule.next_meta_on_pit(meta, new_c), pit_loss))
 
                             for option in options:
                                 comp_idx_opt, age_opt, action_opt, meta_opt, pit_loss_opt = option
+                                if age_opt + 1 > max_age: continue
                                 lt = lap_time(comp_idx_opt, age_opt, lap, compounds, fuel_effect)
                                 next_sc_state = (lap + 1, comp_idx_opt, age_opt + 1, 1, rule.next_meta_on_sc(meta_opt))
                                 val_sc = dp_exp[next_sc_state]
@@ -156,7 +162,7 @@ def compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, 
 
     return dp_exp, policy, follow_states
 
-def extract_no_sc_strategy(rule, start_comp_idx, num_laps, dp_policy, compounds):
+def extract_no_sc_strategy(rule, start_comp_idx, num_laps, dp_policy, compounds, max_age):
     meta = rule.init_meta(start_comp_idx)
     
     stints = []
@@ -167,6 +173,10 @@ def extract_no_sc_strategy(rule, start_comp_idx, num_laps, dp_policy, compounds)
     for lap in range(1, num_laps + 1):
         state = (lap, comp_idx, age, 0, meta)
         action = dp_policy[state]
+        if action is None:
+            raise RuntimeError(f"Infeasible state reached at lap {lap} with compound {comp_idx} age {age}")
+        if action[0] == 'stay' and age >= max_age:
+            raise RuntimeError(f"Policy attempted to overrun tyre age limit at lap {lap} (age {age})")
         if action[0] == 'pit':
             new_comp = action[1]
             stints.append((comp_idx, current_stint_start, lap - 1))
@@ -190,13 +200,13 @@ def calc_race_time(stints, compounds, fuel_effect, pit_loss):
             total_time += lap_time(ci, lap - s_lap, lap, compounds, fuel_effect)
     return total_time
 
-def summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule):
-    dp_exp, policy, _ = compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)    
+def summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule, max_age):
+    dp_exp, policy, _ = compute_policy(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule, max_age)    
     results = {}
     for start_idx, compound in enumerate(compounds):
         meta0 = rule.init_meta(start_idx)
         if meta0 is None: continue  # starting on this tyre is illegal under this rule
-        stints = extract_no_sc_strategy(rule, start_idx, num_laps, policy, compounds)
+        stints = extract_no_sc_strategy(rule, start_idx, num_laps, policy, compounds, max_age)
         expected_time = dp_exp[(1, start_idx, 0, 0, meta0)]
         results[compound['type']] = {
             "expected_time": expected_time,
@@ -213,6 +223,7 @@ def main():
         {"type": "S", "pace": 83.0, "degradation": 0.15},
     ]
     fuel_effect = 0.08
+    max_age = 25
     # sc_prob_ranges = [
     #     (1, 1, 0.261),
     #     (2, 2, 0.049),
@@ -230,7 +241,7 @@ def main():
 
     type_to_idx = {c["type"]: i for i, c in enumerate(compounds)}
     # rule = TwoCompoundTyreRule(compound_indices=list(range(len(compounds))))
-    # results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)
+    # results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule, max_age)
     # print("=== Unconstrained rule (≥2 compounds) ===")
     # for start_comp, info in results.items():
     #     print(f"Start on {start_comp}:")
@@ -242,7 +253,7 @@ def main():
     for pattern in [["M", "M", "H"]]:
         pattern_indices = [type_to_idx[t] for t in pattern]
         rule = PatternUnlessSCTyreRule(pattern_indices, compound_indices=list(range(len(compounds))))
-        results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)
+        results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule, max_age)
         print(f"=== Pattern unless SC {', '.join(pattern)} ===")
         for start_comp, info in results.items():
             print(f"  Expected time: {info['expected_time']}")
