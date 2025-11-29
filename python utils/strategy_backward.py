@@ -41,7 +41,7 @@ class TwoCompoundTyreRule:
 
 class PatternUnlessSCTyreRule:
     # before SC: meta=(False, index) of the next compound, meta=length means we used all
-    # after SC:  meta=(True, index) of one compound already used, or index=-1 if at least two compounds were already used
+    # after SC:  meta=(True, index) if one compound already used, or index=-1 if at least two compounds were already used
     def __init__(self, pattern_comp_indices, compound_indices):
         self.pattern = pattern_comp_indices
         self.length = len(self.pattern)
@@ -208,9 +208,9 @@ def summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_lengt
 def main():
     num_laps = 57
     compounds = [
-        {"type": "H", "pace": 83.559, "degradation": 0.08},
-        {"type": "M", "pace": 83.167, "degradation": 0.09},
-        {"type": "S", "pace": 83.78, "degradation": 0.22},
+        {"type": "H", "pace": 82.9, "degradation": 0.03},
+        {"type": "M", "pace": 82.5, "degradation": 0.03},
+        {"type": "S", "pace": 83.0, "degradation": 0.15},
     ]
     fuel_effect = 0.08
     # sc_prob_ranges = [
@@ -226,20 +226,20 @@ def main():
         (4, None, 0.016),
     ]
     sc_length = 5
-    pit_loss = 27.824
+    pit_loss = 22.5
 
     type_to_idx = {c["type"]: i for i, c in enumerate(compounds)}
-    rule = TwoCompoundTyreRule(compound_indices=list(range(len(compounds))))
-    results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)
-    print("=== Unconstrained rule (≥2 compounds) ===")
-    for start_comp, info in results.items():
-        print(f"Start on {start_comp}:")
-        print(f"  Expected time: {info['expected_time']}")
-        print(f"  No-SC optimal stints: {info['no_sc_stints']}")
-        print(f"  No-SC race time: {info['no_sc_time']}")
-        print()    
+    # rule = TwoCompoundTyreRule(compound_indices=list(range(len(compounds))))
+    # results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)
+    # print("=== Unconstrained rule (≥2 compounds) ===")
+    # for start_comp, info in results.items():
+    #     print(f"Start on {start_comp}:")
+    #     print(f"  Expected time: {info['expected_time']}")
+    #     print(f"  No-SC optimal stints: {info['no_sc_stints']}")
+    #     print(f"  No-SC race time: {info['no_sc_time']}")
+    #     print()    
 
-    for pattern in [["M", "H"], ["M", "S"], ["H", "M"], ["M", "H", "H"], ["H", "M", "M"]]:
+    for pattern in [["M", "M", "H"]]:
         pattern_indices = [type_to_idx[t] for t in pattern]
         rule = PatternUnlessSCTyreRule(pattern_indices, compound_indices=list(range(len(compounds))))
         results = summarize_results(num_laps, compounds, fuel_effect, sc_prob_ranges, sc_length, pit_loss, rule)
