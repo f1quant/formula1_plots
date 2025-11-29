@@ -133,7 +133,6 @@ def save_timing_data(races):
             session = fastf1.get_session(year, round_no, session_type)
             session.load()
             timing_data = fastf1.api.timing_data(session.api_path)[1]
-            timing_data = timing_data[(timing_data["Driver"] == "4") & (timing_data["Position"] == 2)]
             timing_data["Time"] = timing_data["Time"].dt.total_seconds()
             timing_data.to_csv(fn, index=False) 
             print(f"Saved {fn}")
