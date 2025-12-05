@@ -7152,6 +7152,31 @@ function updateSelectedDrivers(mutator, options = {}) {
         tr.appendChild(deleteTd);
         tbody.appendChild(tr);
       });
+
+      setupCalculatorScProbTabbing();
+    }
+
+    function setupCalculatorScProbTabbing() {
+      const table = document.getElementById('calculatorScProbTable');
+      if (!table) return;
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      const columns = [
+        rows.map(row => row.querySelector('.calcFromLap')).filter(Boolean),
+        rows.map(row => row.querySelector('.calcToLap')).filter(Boolean),
+        rows.map(row => row.querySelector('.calcProb')).filter(Boolean)
+      ];
+      const orderedInputs = columns.flat();
+      orderedInputs.forEach((input, idx) => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key !== 'Tab') return;
+          const backwards = e.shiftKey;
+          const nextIdx = idx + (backwards ? -1 : 1);
+          if (backwards && idx === 0) return;
+          if (!backwards && idx === orderedInputs.length - 1) return;
+          e.preventDefault();
+          orderedInputs[nextIdx].focus();
+        });
+      });
     }
 
     function updateCalculatorScProbRange(index, field, value, { rerender = true } = {}) {
