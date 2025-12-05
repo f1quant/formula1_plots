@@ -7115,7 +7115,7 @@ function updateSelectedDrivers(mutator, options = {}) {
         fromInput.type = 'number';
         fromInput.min = '1';
         fromInput.value = range.from ?? '';
-        fromInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'from', e.target.value));
+        fromInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'from', e.target.value, { rerender: false }));
         fromTd.appendChild(fromInput);
 
         const toTd = document.createElement('td');
@@ -7124,7 +7124,7 @@ function updateSelectedDrivers(mutator, options = {}) {
         toInput.type = 'number';
         toInput.min = '1';
         toInput.value = range.to ?? '';
-        toInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'to', e.target.value));
+        toInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'to', e.target.value, { rerender: false }));
         toTd.appendChild(toInput);
 
         const probTd = document.createElement('td');
@@ -7135,7 +7135,7 @@ function updateSelectedDrivers(mutator, options = {}) {
         probInput.min = '0';
         probInput.max = '100';
         probInput.value = range.prob ?? '';
-        probInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'prob', e.target.value));
+        probInput.addEventListener('input', (e) => updateCalculatorScProbRange(index, 'prob', e.target.value, { rerender: false }));
         probTd.appendChild(probInput);
 
         const deleteTd = document.createElement('td');
@@ -7154,14 +7154,16 @@ function updateSelectedDrivers(mutator, options = {}) {
       });
     }
 
-    function updateCalculatorScProbRange(index, field, value) {
+    function updateCalculatorScProbRange(index, field, value, { rerender = true } = {}) {
       const ranges = Array.isArray(appState.calculator.scProbRanges)
         ? appState.calculator.scProbRanges.slice()
         : [];
       if (!ranges[index]) return;
       ranges[index] = { ...ranges[index], [field]: value };
       saveToState('calculator.scProbRanges', ranges);
-      renderCalculatorScProbTableFromState();
+      if (rerender) {
+        renderCalculatorScProbTableFromState();
+      }
     }
 
     function addCalculatorScProbRow(initial = { from: '', to: '', prob: '' }) {
