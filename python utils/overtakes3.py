@@ -79,6 +79,8 @@ def calc_battles(gaps_by_lap, pit_stops_by_lap, safety_car_by_lap):
                 active_pairs[pair_key]["gaps"].append(gap_between)
                 active_pairs[pair_key]["last_positions"] = (i + 1, i + 2)
             else:
+                if lap_data[i][0] in safety_car_drivers or lap_data[i + 1][0] in safety_car_drivers:
+                    continue  # do not start tracking during safety car
                 # Start new sequence
                 active_pairs[pair_key] = {
                     "driver_front": pair_key[0],
@@ -166,11 +168,27 @@ def main():
 
     for battle in battles:
         if len(battle["gaps"]) < 3: continue # cashing for 3 laps
-        if battle["gaps"][-1] > 3: continue # got close enough
+        if battle["gaps"][-1] > 2: continue # got close enough
+
+        less1 = [(idx,x) for idx,x in enumerate(battle['gaps']) if x < 1]
+        # if battle["gaps"][0] - battle["gaps"][-1] < 2 and len(less1) == 0: continue # closed the gap
         if battle["gaps"][0] - battle["gaps"][-1] < 2: continue # closed the gap
         if team_map[battle["driver_front"]] == team_map[battle["driver_behind"]]: continue # same team
 
-        print(f"{battle['driver_behind']}|{battle['driver_front']}|{len(battle['gaps'])}|{battle['from_lap']}|{battle['end_lap']}|{battle['event']['type']}",end="|")
+        # what was the pace at which the gap was decreasing from the start of tracking to the first time the gap was below 1 second
+        catch_up_pace = None
+        less1 = [(idx,x) for idx,x in enumerate(battle['gaps']) if x < 1]
+        if len(less1) > 0:
+            catch_up_pace = (battle['gaps'][0] - less1[0][1]) / (less1[0][0] + 1)
+            laps_stuck_behind = len(battle['gaps']) - (less1[0][0] + 1)
+        else:
+            less2 = [(idx,x) for idx,x in enumerate(battle['gaps']) if x < 2]
+            if len(less2) > 0:
+                catch_up_pace = (battle['gaps'][0] - less2[0][1]) / (less2[0][0] + 1)
+                laps_stuck_behind = len(battle['gaps']) - (less2[0][0] + 1)
+
+
+        print(f"{battle['driver_behind']}|{battle['driver_front']}|{len(battle['gaps'])}|{battle['from_lap']}|{battle['end_lap']}|{battle['event']['type']}|{catch_up_pace}|{laps_stuck_behind}",end="|")
         print("|".join(map(str,battle['gaps'])),end="|")
 
         if battle['event']['type'] == 'overtake':
