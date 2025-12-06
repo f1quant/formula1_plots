@@ -9281,36 +9281,26 @@ setupTyreDegFilterModal();
         td.style.textAlign = 'center';
         td.style.fontWeight = '600';
 
-        // Calculate average for selected drivers only
-        const values = [];
+        // Calculate average gap per driver (only include drivers with both compounds)
+        const deltas = [];
         lapTimeDriverOrder.forEach(({ driver }) => {
           if (!appState.selectedDrivers.has(driver)) return;
           const driverData = driverAverages.get(driver);
-          if (driverData && driverData[compound] !== undefined) {
-            values.push(driverData[compound]);
+          if (driverData && driverData[compound] !== undefined && driverData[referenceCompound] !== undefined) {
+            const delta = driverData[compound] - driverData[referenceCompound];
+            deltas.push(delta);
           }
         });
 
-        if (values.length > 0) {
-          const avg = values.reduce((a, b) => a + b, 0) / values.length;
-
-          // Calculate reference average for delta
-          const refValues = [];
-          lapTimeDriverOrder.forEach(({ driver }) => {
-            if (!appState.selectedDrivers.has(driver)) return;
-            const driverData = driverAverages.get(driver);
-            if (driverData && driverData[referenceCompound] !== undefined) {
-              refValues.push(driverData[referenceCompound]);
-            }
-          });
-          const refAvg = refValues.length > 0 ? refValues.reduce((a, b) => a + b, 0) / refValues.length : 0;
-
-          td.innerHTML = avg.toFixed(3);
-          if (compound !== referenceCompound && refAvg > 0) {
-            const delta = avg - refAvg;
-            const deltaStr = delta >= 0 ? `+${delta.toFixed(3)}` : delta.toFixed(3);
-            const deltaColor = delta < 0 ? '#00ff00' : '#ff0000';
-            td.innerHTML += ` <span style="color: ${deltaColor};">(${deltaStr})</span>`;
+        if (deltas.length > 0) {
+          if (compound === referenceCompound) {
+            td.textContent = '+0.000';
+            td.style.color = 'var(--accent-color)';
+          } else {
+            const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+            const deltaStr = avgDelta >= 0 ? `+${avgDelta.toFixed(3)}` : avgDelta.toFixed(3);
+            td.textContent = deltaStr;
+            td.style.color = avgDelta < 0 ? '#00ff00' : '#ff0000';
           }
         } else {
           td.textContent = '-';
