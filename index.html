@@ -9916,8 +9916,31 @@ setupTyreDegFilterModal();
       }
     });
 
+    function calculateAdjustedCorrelation(corr, deg, fuelEffect) {
+      const slope = Number.isFinite(deg) ? deg : parseFloat(deg);
+      const corrVal = Number.isFinite(corr) ? corr : parseFloat(corr);
+      const fuel = Number.isFinite(fuelEffect) ? fuelEffect : 0;
+
+      if (!Number.isFinite(slope) || slope === 0 || !Number.isFinite(corrVal)) {
+        return corrVal;
+      }
+
+      const degAdj = slope + fuel;
+      const scaledCorr = (degAdj / slope) * corrVal;
+      const denominator = Math.sqrt((1 - corrVal ** 2) + scaledCorr ** 2);
+
+      if (!Number.isFinite(denominator) || denominator === 0) {
+        return corrVal;
+      }
+
+      return scaledCorr / denominator;
+    }
+
     function processTyreDegData(sessionData) {
       const filteredRows = applySharedFilters(sessionData);
+      const fuelEffectInput = document.getElementById('tyreDegFuelEffectSlider');
+      const sliderFuelEffect = fuelEffectInput ? parseFloat(fuelEffectInput.value) : appState.paceModel.fuelEffect;
+      const fuelEffect = Number.isFinite(sliderFuelEffect) ? sliderFuelEffect : 0;
 
       // Group by driver and stint
       const groups = new Map();
@@ -9964,8 +9987,11 @@ setupTyreDegFilterModal();
       groups.forEach((group, key) => {
         if (group.rows.length >= minRows) {
           group.regressionStats = calculateRegressionStats(group.rows);
+          const deg = parseFloat(group.regressionStats.slope);
+          const corrAdj = calculateAdjustedCorrelation(group.regressionStats.correlation, deg, fuelEffect);
+          group.regressionStats.correlationAdjusted = Number.isFinite(corrAdj) ? corrAdj : group.regressionStats.correlation;
 
-          if (group.regressionStats.correlation >= minCorr) {
+          if (group.regressionStats.correlationAdjusted >= minCorr) {
             // Calculate additional fields
             const tyreLifeValues = group.rows.map(r => parseFloat(r.lap_TyreLife)).filter(v => !isNaN(v));
             const lapNumberValues = group.rows.map(r => parseFloat(r.lap_LapNumber)).filter(v => !isNaN(v));
@@ -10235,8 +10261,8 @@ setupTyreDegFilterModal();
         // Deg (with fuel effect adjustment)
         const tdDeg = document.createElement('td');
         const deg = parseFloat(group.regressionStats.slope);
-        const degAdj = deg + fuelEffect;
-        tdDeg.textContent = isNaN(degAdj) ? group.regressionStats.slope : degAdj.toFixed(4);
+        const degAdj = Number.isFinite(deg) ? deg + fuelEffect : NaN;
+        tdDeg.textContent = Number.isFinite(degAdj) ? degAdj.toFixed(4) : group.regressionStats.slope;
         tr.appendChild(tdDeg);
 
         // Pace (with fuel effect adjustment)
@@ -10246,14 +10272,23 @@ setupTyreDegFilterModal();
         const lapsToGo = group.lapsToGo;
         const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
         const corr = group.regressionStats.correlation;
-        const corrAdj = degAdj/deg*corr / Math.sqrt((1-corr**2) + (degAdj/deg*corr)**2) 
+        const corrAdj = Number.isFinite(group.regressionStats.correlationAdjusted)
+          ? group.regressionStats.correlationAdjusted
+          : calculateAdjustedCorrelation(corr, deg, fuelEffect);
 
         tdPace.textContent = isNaN(paceAdj) ? group.regressionStats.intercept : paceAdj.toFixed(4);
         tr.appendChild(tdPace);
 
         // Correlation
         const tdCorrelation = document.createElement('td');
-        tdCorrelation.textContent = corrAdj.toFixed(4);
+        if (Number.isFinite(corrAdj)) {
+          tdCorrelation.textContent = corrAdj.toFixed(4);
+        } else if (Number.isFinite(corr)) {
+          tdCorrelation.textContent = corr.toFixed(4);
+        } else {
+          tdCorrelation.textContent = '-';
+          tdCorrelation.style.color = 'var(--muted-color)';
+        }
         tr.appendChild(tdCorrelation);
 
         // RMSE
@@ -10377,14 +10412,12 @@ setupTyreDegFilterModal();
         if (stats && stats.slope !== '-' && stats.intercept !== '-') {
           const deg = parseFloat(stats.slope);
           const pace = parseFloat(stats.intercept);
-          const corr = stats.correlation;
 
           // Apply fuel effect adjustments
           const minTyreLife = group.minTyreLife;
           const lapsToGo = group.lapsToGo;
-          const degAdj = deg + fuelEffect;
+          const degAdj = Number.isFinite(deg) ? deg + fuelEffect : NaN;
           const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
-          const corrAdj = degAdj/deg*corr / Math.sqrt((1-corr**2) + (degAdj/deg*corr)**2) 
 
           if (!isNaN(paceAdj) && !isNaN(degAdj)) {
             if (!datasets.has(compound)) {
