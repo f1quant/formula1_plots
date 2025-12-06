@@ -10245,14 +10245,15 @@ setupTyreDegFilterModal();
         const minTyreLife = group.minTyreLife;
         const lapsToGo = group.lapsToGo;
         const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
+        const corr = group.regressionStats.correlation;
+        const corrAdj = degAdj/deg*corr / Math.sqrt((1-corr**2) + (degAdj/deg*corr)**2) 
+
         tdPace.textContent = isNaN(paceAdj) ? group.regressionStats.intercept : paceAdj.toFixed(4);
         tr.appendChild(tdPace);
 
         // Correlation
         const tdCorrelation = document.createElement('td');
-        tdCorrelation.textContent = typeof group.regressionStats.correlation === 'number'
-          ? group.regressionStats.correlation.toFixed(3)
-          : group.regressionStats.correlation;
+        tdCorrelation.textContent = corrAdj.toFixed(4);
         tr.appendChild(tdCorrelation);
 
         // RMSE
@@ -10376,12 +10377,14 @@ setupTyreDegFilterModal();
         if (stats && stats.slope !== '-' && stats.intercept !== '-') {
           const deg = parseFloat(stats.slope);
           const pace = parseFloat(stats.intercept);
+          const corr = stats.correlation;
 
           // Apply fuel effect adjustments
           const minTyreLife = group.minTyreLife;
           const lapsToGo = group.lapsToGo;
           const degAdj = deg + fuelEffect;
           const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
+          const corrAdj = degAdj/deg*corr / Math.sqrt((1-corr**2) + (degAdj/deg*corr)**2) 
 
           if (!isNaN(paceAdj) && !isNaN(degAdj)) {
             if (!datasets.has(compound)) {
