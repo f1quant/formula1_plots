@@ -9936,6 +9936,21 @@ setupTyreDegFilterModal();
       return scaledCorr / denominator;
     }
 
+    function adjustTyreDegStats(group, fuelEffect = 0) {
+      const stats = group?.regressionStats || {};
+      const deg = Number.isFinite(stats.slope) ? stats.slope : parseFloat(stats.slope);
+      const pace = Number.isFinite(stats.intercept) ? stats.intercept : parseFloat(stats.intercept);
+      const corr = stats.correlation;
+      const minTyreLife = Number.isFinite(group?.minTyreLife) ? group.minTyreLife : 0;
+      const lapsToGo = Number.isFinite(group?.lapsToGo) ? group.lapsToGo : 0;
+
+      const degAdj = Number.isFinite(deg) ? deg + fuelEffect : NaN;
+      const paceAdj = Number.isFinite(pace) ? pace - (minTyreLife + lapsToGo) * fuelEffect : NaN;
+      const corrAdj = calculateAdjustedCorrelation(corr, deg, fuelEffect);
+
+      return { degAdj, paceAdj, corrAdj };
+    }
+
     function processTyreDegData(sessionData) {
       const filteredRows = applySharedFilters(sessionData);
       const fuelEffectInput = document.getElementById('tyreDegFuelEffectSlider');
@@ -10003,6 +10018,12 @@ setupTyreDegFilterModal();
             group.compound = group.rows[0]?.lap_Compound || '-';
             group.finishStatus = group.rows[0]?.finish_status || '-';
             group.schedLaps = schedLapsValue || '-';
+
+            // Cache adjusted stats for reuse
+            const adjusted = adjustTyreDegStats(group, fuelEffect);
+            if (Number.isFinite(adjusted.degAdj)) group.regressionStats.degAdjusted = adjusted.degAdj;
+            if (Number.isFinite(adjusted.paceAdj)) group.regressionStats.paceAdjusted = adjusted.paceAdj;
+            if (Number.isFinite(adjusted.corrAdj)) group.regressionStats.correlationAdjusted = adjusted.corrAdj;
 
             tyreDegFilteredGroups.set(key, group);
           }
@@ -10260,21 +10281,22 @@ setupTyreDegFilterModal();
 
         // Deg (with fuel effect adjustment)
         const tdDeg = document.createElement('td');
-        const deg = parseFloat(group.regressionStats.slope);
-        const degAdj = Number.isFinite(deg) ? deg + fuelEffect : NaN;
+        const adjustedStats = adjustTyreDegStats(group, fuelEffect);
+        const degAdj = Number.isFinite(group.regressionStats.degAdjusted)
+          ? group.regressionStats.degAdjusted
+          : adjustedStats.degAdj;
         tdDeg.textContent = Number.isFinite(degAdj) ? degAdj.toFixed(4) : group.regressionStats.slope;
         tr.appendChild(tdDeg);
 
         // Pace (with fuel effect adjustment)
         const tdPace = document.createElement('td');
-        const pace = parseFloat(group.regressionStats.intercept);
-        const minTyreLife = group.minTyreLife;
-        const lapsToGo = group.lapsToGo;
-        const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
+        const paceAdj = Number.isFinite(group.regressionStats.paceAdjusted)
+          ? group.regressionStats.paceAdjusted
+          : adjustedStats.paceAdj;
         const corr = group.regressionStats.correlation;
         const corrAdj = Number.isFinite(group.regressionStats.correlationAdjusted)
           ? group.regressionStats.correlationAdjusted
-          : calculateAdjustedCorrelation(corr, deg, fuelEffect);
+          : adjustedStats.corrAdj;
 
         tdPace.textContent = isNaN(paceAdj) ? group.regressionStats.intercept : paceAdj.toFixed(4);
         tr.appendChild(tdPace);
@@ -10410,14 +10432,14 @@ setupTyreDegFilterModal();
         const stats = group.regressionStats;
 
         if (stats && stats.slope !== '-' && stats.intercept !== '-') {
-          const deg = parseFloat(stats.slope);
-          const pace = parseFloat(stats.intercept);
-
           // Apply fuel effect adjustments
-          const minTyreLife = group.minTyreLife;
-          const lapsToGo = group.lapsToGo;
-          const degAdj = Number.isFinite(deg) ? deg + fuelEffect : NaN;
-          const paceAdj = pace - (minTyreLife + lapsToGo) * fuelEffect;
+          const adjustedStats = adjustTyreDegStats(group, fuelEffect);
+          const degAdj = Number.isFinite(group.regressionStats.degAdjusted)
+            ? group.regressionStats.degAdjusted
+            : adjustedStats.degAdj;
+          const paceAdj = Number.isFinite(group.regressionStats.paceAdjusted)
+            ? group.regressionStats.paceAdjusted
+            : adjustedStats.paceAdj;
 
           if (!isNaN(paceAdj) && !isNaN(degAdj)) {
             if (!datasets.has(compound)) {
