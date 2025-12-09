@@ -1549,7 +1549,48 @@
     }
 
     #fuelEffectGroupsTable {
+      width: 100%;
+      max-width: 760px;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin: 12px auto 0 auto;
+      font-size: 13px;
+      background: rgba(0,0,0,0.02);
+      border-radius: 8px;
+      overflow: hidden;
       position: relative;
+    }
+
+    #fuelEffectGroupsTable th,
+    #fuelEffectGroupsTable td {
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      text-align: left;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #fuelEffectGroupsTable th {
+      background: rgba(0, 224, 255, 0.04);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      color: var(--accent-color);
+    }
+
+    #fuelEffectGroupsTable th:nth-child(1) { width: 56px; }
+    #fuelEffectGroupsTable th:nth-child(2) { width: 200px; }
+    #fuelEffectGroupsTable th:nth-child(3) { width: 120px; }
+    #fuelEffectGroupsTable th:nth-child(4) { width: 140px; }
+    #fuelEffectGroupsTable th:nth-child(5) { width: 110px; }
+
+    @media (max-width: 820px) {
+      #fuelEffectGroupsTable { max-width: 100%; margin: 12px 0 0 0; }
+      #fuelEffectGroupsTable th:nth-child(2) { width: 160px; }
+      #fuelEffectGroupsTable th:nth-child(4) { width: 120px; }
     }
 
     #lapTimeSummaryTable {
@@ -2680,18 +2721,8 @@
     </div>
 <!-- Fuel Effect Panel -->
     <div id="fuel-effect-panel" class="content-panel">
-      <div class="fuel-effect-controls">
-        <button id="fuelEffectFilterBtn" class="filter-button" data-tooltip="Adjust fuel effect filters" aria-label="Adjust fuel effect filters">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-6.5 7.11v5.64L9.5 19v-7.89z"/></svg>
-        </button>
-      </div>
-      <div style="width: 100%; height: 400px; margin-bottom: 12px;">
-        <div id="fuelEffectChartContainer" style="width: 100%; height: 100%; display: none;"></div>
-      </div>
-      <div id="fuelEffectCoefficientsContainer" style="display: none; padding: 12px 16px; background: rgba(0, 224, 255, 0.03); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 8px;">
-        <div style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Linear Fit Coefficients (y = mx)</div>
-        <div id="fuelEffectCoefficientsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;"></div>
-      </div>
+      <div id="fuelEffectChartContainer" style="display: none;"></div>
+      <div id="fuelEffectCoefficientsContainer" style="display: none;"></div>
       <div id="fuelEffectGroupsTableContainer" style="margin-top: 12px;"></div>
     </div>
 
@@ -10927,252 +10958,20 @@ setupTyreDegFilterModal();
     });
 
     function renderFuelEffectScatterPlot(groups) {
-      // Filter to only selected rows
-      const selectedGroups = groups.filter(([key]) => {
-        return appState.fuelEffect.selectedRows.has(key);
-      });
-
-      // Prepare data by compound from selected lap pairs
-      const dataByCompound = new Map();
-
-      selectedGroups.forEach(([key, group]) => {
-        if (!group || !Array.isArray(group.pairs)) return;
-
-        group.pairs.forEach(pair => {
-          if (!Number.isFinite(pair.lapNumDiff) || pair.lapNumDiff <= 0) return;
-          if (!Number.isFinite(pair.lapTimeDiff)) return;
-
-          const compound = group.compound;
-          if (!dataByCompound.has(compound)) {
-            dataByCompound.set(compound, []);
-          }
-
-          dataByCompound.get(compound).push({
-            value: [pair.lapNumDiff, pair.lapTimeDiff],
-            driver: group.driver,
-            tyreLife: pair.tyreLife,
-            lap1Number: pair.lap1Number,
-            lap1Time: pair.lap1Time,
-            lap2Number: pair.lap2Number,
-            lap2Time: pair.lap2Time,
-            ratio: pair.ratio
-          });
-        });
-      });
-
-      const hasData = Array.from(dataByCompound.values()).some(arr => arr.length > 0);
-
-      if (selectedGroups.length === 0 || !hasData) {
+      // Scatter plot and per-compound coefficients are no longer shown.
+      if (fuelEffectChartContainer) {
         fuelEffectChartContainer.style.display = 'none';
+      }
+      if (fuelEffectCoefficientsContainer) {
         fuelEffectCoefficientsContainer.style.display = 'none';
-        if (fuelEffectChart) {
-          fuelEffectChart.dispose();
-          fuelEffectChart = null;
-        }
-        return;
       }
-
-      // Show chart container
-      fuelEffectChartContainer.style.display = 'block';
-      fuelEffectCoefficientsContainer.style.display = 'block';
-
-      // Initialize chart if needed
-      if (!fuelEffectChart) {
-        fuelEffectChart = echarts.init(fuelEffectChartContainer);
+      if (fuelEffectCoefficientsGrid) {
+        fuelEffectCoefficientsGrid.innerHTML = '';
       }
-
-      // Calculate linear regression (zero intercept) and create series
-      const series = [];
-      const coefficients = new Map();
-
-      dataByCompound.forEach((data, compound) => {
-        if (!data.length) return;
-
-        const color = getF1TireColor(compound);
-
-        // Add scatter series
-        series.push({
-          name: compound,
-          type: 'scatter',
-          data: data,
-          symbolSize: 6,
-          itemStyle: {
-            color: color,
-            borderColor: color,
-            borderWidth: 0
-          },
-          emphasis: {
-            focus: 'series',
-            itemStyle: {
-              borderWidth: 2,
-              shadowBlur: 10,
-              shadowColor: color
-            }
-          }
-        });
-
-        // Calculate linear regression with zero intercept: y = mx
-        // m = Σ(xy) / Σ(x²)
-        let sumXY = 0;
-        let sumX2 = 0;
-
-        data.forEach(point => {
-          const x = point.value[0];
-          const y = point.value[1];
-          sumXY += x * y;
-          sumX2 += x * x;
-        });
-
-        const slope = sumX2 !== 0 ? sumXY / sumX2 : 0;
-        coefficients.set(compound, slope);
-
-        // Find min and max x values for the line
-        const xValues = data.map(point => point.value[0]);
-        const minX = Math.min(...xValues);
-        const maxX = Math.max(...xValues);
-
-        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
-          return;
-        }
-
-        // Create line data
-        const lineData = [
-          [minX, slope * minX],
-          [maxX, slope * maxX]
-        ];
-
-        // Add line series
-        series.push({
-          name: `${compound} fit`,
-          type: 'line',
-          data: lineData,
-          showSymbol: false,
-          lineStyle: {
-            color: color,
-            width: 2,
-            type: 'dashed'
-          },
-          emphasis: { disabled: true },
-          silent: true,
-          zlevel: -1
-        });
-      });
-
-      // Set chart options
-      fuelEffectChart.setOption({
-        backgroundColor: 'transparent',
-        grid: { left: 60, right: 20, top: 50, bottom: 60 },
-        legend: {
-          show: true,
-          top: 5,
-          textStyle: { color: '#f5f5f5', fontSize: 11 },
-          itemWidth: 12,
-          itemHeight: 12,
-          data: Array.from(dataByCompound.keys()) // Only show compounds, not fit lines
-        },
-        tooltip: {
-          show: true,
-          trigger: 'item',
-          confine: true,
-          borderColor: '#2a2f3a',
-          backgroundColor: 'rgba(26,29,36,0.96)',
-          textStyle: { color: '#e8e8e8' },
-          extraCssText: 'padding:10px 12px;border-radius:10px',
-          formatter: (p) => {
-            const data = p.data;
-            return `
-              <strong>${p.seriesName} - ${data.driver}</strong><br/>
-              Tyre Life: ${data.tyreLife}<br/>
-              <br/>
-              Lap ${data.lap1Number}: ${data.lap1Time.toFixed(3)}s<br/>
-              Lap ${data.lap2Number}: ${data.lap2Time.toFixed(3)}s<br/>
-              <br/>
-              Lap # Diff: ${data.value[0]}<br/>
-              Lap Time Diff: ${data.value[1].toFixed(3)}s<br/>
-              Diff per Lap: ${data.ratio.toFixed(6)}s/lap
-            `;
-          }
-        },
-        xAxis: {
-          type: 'value',
-          name: 'Lap Number Difference',
-          nameLocation: 'middle',
-          nameGap: 30,
-          nameTextStyle: { color: '#00e0ff', fontSize: 12, fontWeight: 600 },
-          axisLine: { lineStyle: { color: '#9ca3af' } },
-          axisLabel: { color: '#9ca3af' },
-          splitLine: { lineStyle: { color: 'rgba(148, 163, 253, 0.1)' } }
-        },
-        yAxis: {
-          type: 'value',
-          name: 'Lap Time Difference (s)',
-          nameLocation: 'middle',
-          nameGap: 45,
-          nameTextStyle: { color: '#00e0ff', fontSize: 12, fontWeight: 600 },
-          axisLine: { lineStyle: { color: '#9ca3af' } },
-          axisLabel: { color: '#9ca3af' },
-          splitLine: { lineStyle: { color: 'rgba(148, 163, 253, 0.1)' } }
-        },
-        series: series
-      }, true);
-
-      // Resize chart
-      fuelEffectChart.resize();
-
-      // Display coefficients
-      fuelEffectCoefficientsGrid.innerHTML = '';
-      coefficients.forEach((slope, compound) => {
-        const color = getF1TireColor(compound);
-        const coeffDiv = document.createElement('div');
-        coeffDiv.style.cssText = `
-          font-size: 11px;
-          color: var(--text-color);
-          font-family: 'Courier New', monospace;
-          padding: 6px 10px;
-          background: rgba(0, 0, 0, 0.3);
-          border-radius: 6px;
-          border-left: 3px solid ${color};
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 8px;
-        `;
-
-        const textSpan = document.createElement('span');
-        textSpan.innerHTML = `<strong>${compound}:</strong> m = ${slope.toFixed(6)}`;
-        coeffDiv.appendChild(textSpan);
-
-        const copyButton = document.createElement('button');
-        copyButton.textContent = 'Select Fuel Effect';
-        copyButton.style.cssText = `
-          padding: 6px 8px;
-          font-size: 10px;
-          background: var(--accent-color);
-          color: var(--bg-color);
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-weight: 600;
-        `;
-        copyButton.addEventListener('click', () => {
-          // Reverse the sign
-          const reversedValue = -slope;
-          const formattedValue = parseFloat(reversedValue.toFixed(6));
-
-          saveToState('paceModel.fuelEffect', formattedValue);
-          renderPaceModelInputsFromState();
-          onLapTimeAdjustmentChange();
-
-          // Visual feedback
-          copyButton.textContent = 'Selected!';
-          setTimeout(() => {
-            copyButton.textContent = 'Select Fuel Effect';
-          }, 1000);
-        });
-        coeffDiv.appendChild(copyButton);
-
-        fuelEffectCoefficientsGrid.appendChild(coeffDiv);
-      });
+      if (fuelEffectChart) {
+        fuelEffectChart.dispose();
+        fuelEffectChart = null;
+      }
     }
 
     function displayFuelEffectGroupsTable(rows) {
@@ -11420,6 +11219,37 @@ setupTyreDegFilterModal();
 
       tbody.appendChild(avgRow);
 
+      // Controls: copy average fuel effect
+      const controlsRow = document.createElement('div');
+      controlsRow.style.cssText = 'display: flex; align-items: center; gap: 10px; margin: 0 0 8px 0;';
+
+      const copyAvgBtn = document.createElement('button');
+      copyAvgBtn.textContent = 'Select Average Fuel Effect';
+      copyAvgBtn.style.cssText = `
+        padding: 8px 12px;
+        background: var(--accent-color);
+        color: var(--bg-color);
+        border: none;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 12px;
+        cursor: pointer;
+      `;
+      copyAvgBtn.disabled = !Number.isFinite(averageFuelEffect);
+      copyAvgBtn.addEventListener('click', () => {
+        if (!Number.isFinite(averageFuelEffect)) return;
+        const reversedValue = -averageFuelEffect;
+        const formattedValue = parseFloat(reversedValue.toFixed(6));
+        saveToState('paceModel.fuelEffect', formattedValue);
+        renderPaceModelInputsFromState();
+        onLapTimeAdjustmentChange();
+        copyAvgBtn.textContent = 'Selected!';
+        setTimeout(() => {
+          copyAvgBtn.textContent = 'Select Average Fuel Effect';
+        }, 1000);
+      });
+      controlsRow.appendChild(copyAvgBtn);
+
       const tableSelectionItems = [];
 
       sortedGroups.forEach(([key, group]) => {
@@ -11472,6 +11302,7 @@ setupTyreDegFilterModal();
 
       table.appendChild(tbody);
       fuelEffectGroupsTableContainer.innerHTML = '';
+      fuelEffectGroupsTableContainer.appendChild(controlsRow);
       fuelEffectGroupsTableContainer.appendChild(table);
 
       const selectAllCheckbox = table.querySelector('#fuelEffectSelectAllCheckbox');
