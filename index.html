@@ -11389,6 +11389,37 @@ setupTyreDegFilterModal();
       // Body
       const tbody = document.createElement('tbody');
 
+      // Average row (across visible groups)
+      const avgRow = document.createElement('tr');
+      const avgSelect = document.createElement('td');
+      avgRow.appendChild(avgSelect);
+
+      const avgDriver = document.createElement('td');
+      avgDriver.textContent = 'Average';
+      avgDriver.style.color = 'var(--accent-color)';
+      avgDriver.style.fontWeight = '600';
+      avgRow.appendChild(avgDriver);
+
+      const avgCompound = document.createElement('td');
+      avgCompound.textContent = '-';
+      avgCompound.style.color = 'var(--muted-color)';
+      avgRow.appendChild(avgCompound);
+
+      const averageFuelEffect = sortedGroups.length
+        ? sortedGroups.reduce((sum, [, g]) => sum + g.averageRatio, 0) / sortedGroups.length
+        : NaN;
+      const avgEffectCell = document.createElement('td');
+      avgEffectCell.textContent = Number.isFinite(averageFuelEffect) ? averageFuelEffect.toFixed(3) : '-';
+      avgEffectCell.style.fontWeight = '700';
+      avgRow.appendChild(avgEffectCell);
+
+      const totalPairs = sortedGroups.reduce((sum, [, g]) => sum + (g.totalPairs || 0), 0);
+      const avgSamplesCell = document.createElement('td');
+      avgSamplesCell.textContent = `${totalPairs}`;
+      avgRow.appendChild(avgSamplesCell);
+
+      tbody.appendChild(avgRow);
+
       const tableSelectionItems = [];
 
       sortedGroups.forEach(([key, group]) => {
