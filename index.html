@@ -11221,10 +11221,10 @@ setupTyreDegFilterModal();
 
       // Controls: copy average fuel effect
       const controlsRow = document.createElement('div');
-      controlsRow.style.cssText = 'display: flex; align-items: center; gap: 10px; margin: 0 0 8px 0;';
+      controlsRow.style.cssText = 'display: flex; align-items: center; gap: 10px; margin: 0 auto 8px auto; justify-content: flex-start; max-width: 760px; width: 100%;';
 
       const copyAvgBtn = document.createElement('button');
-      copyAvgBtn.textContent = 'Select Average Fuel Effect';
+      copyAvgBtn.textContent = 'Copy Average to Calculator';
       copyAvgBtn.style.cssText = `
         padding: 8px 12px;
         background: var(--accent-color);
@@ -11243,9 +11243,9 @@ setupTyreDegFilterModal();
         saveToState('paceModel.fuelEffect', formattedValue);
         renderPaceModelInputsFromState();
         onLapTimeAdjustmentChange();
-        copyAvgBtn.textContent = 'Selected!';
+        copyAvgBtn.textContent = 'Copied!';
         setTimeout(() => {
-          copyAvgBtn.textContent = 'Select Average Fuel Effect';
+          copyAvgBtn.textContent = 'Copy Average to Calculator';
         }, 1000);
       });
       controlsRow.appendChild(copyAvgBtn);
